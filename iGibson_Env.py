@@ -15,8 +15,6 @@ class iGibsonEnv(object):
                                     mode=self.mode,
                                     action_timestep=1.0 / 10.0,
                                     physics_timestep=1.0 / 40.0)
-        print(self.env.observation_space)
-        print(self.env.action_space)
         ### log ###
 
         # locobot_point_nav
@@ -43,6 +41,7 @@ class iGibsonEnv(object):
 
     def reset(self):
         obs = self.env.reset()
+        import pdb; pdb.set_trace()
         return obs
 
     def step(self, actions):
