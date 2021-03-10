@@ -21,7 +21,7 @@ class BaseRewardFunction():
         return
 
     @abstractmethod
-    def get_reward(self, task, env):
+    def get_reward(self, task, env, robot_id=0):
         """
         Compute the reward at the current timestep. Overwritten by subclasses.
 

@@ -1003,8 +1003,10 @@ class MeshRenderer(object):
     def render_robot_cameras(self, modes=('rgb')):
         """
         Render robot camera images
-
-        :return: a list of frames (number of modalities x number of robots)
+        
+        # add by zoe
+        :return: a list of frames [number of robots, number of modalities]  
+        
         """
         frames = []
         for instance in self.instances:
@@ -1018,8 +1020,10 @@ class MeshRenderer(object):
                 hidden_instances = []
                 if self.rendering_settings.hide_robot:
                     hidden_instances.append(instance)
+                items = []
                 for item in self.render(modes=modes, hidden=hidden_instances):
-                    frames.append(item)
+                    items.append(item)
+                frames.append(items)
         return frames
 
     def optimize_vertex_and_texture(self):

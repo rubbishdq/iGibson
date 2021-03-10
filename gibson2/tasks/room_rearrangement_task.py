@@ -96,17 +96,21 @@ class RoomRearrangementTask(BaseTask):
         # TODO: p.saveState takes a few seconds, need to speed up
         state_id = p.saveState()
         for _ in range(max_trials):
-            initial_pos, initial_orn = self.sample_initial_pose(env)
-            reset_success = env.test_valid_position(
-                env.robots[0], initial_pos, initial_orn)
+            reset_success = np.zeros(self.num_robots, dtype=bool)
+            initial_pos = np.zeros((self.num_robots, 3))
+            initial_orn = np.zeros((self.num_robots, 3))
+            for robot_id in range(self.num_robots):
+                initial_pos[robot_id], initial_orn[robot_id] = self.sample_initial_pose(env)
+                reset_success[robot_id] = env.test_valid_position(env.robots[robot_id], initial_pos[robot_id], initial_orn[robot_id])
             p.restoreState(state_id)
-            if reset_success:
+            if np.all(reset_success):
                 break
 
-        if not reset_success:
+        if not np.all(reset_success):
             logging.warning("WARNING: Failed to reset robot without collision")
 
-        env.land(env.robots[0], initial_pos, initial_orn)
+        for robot_id in range(self.num_robots):
+            env.land(env.robots[robot_id], initial_pos[robot_id], initial_orn[robot_id])
         p.removeState(state_id)
 
         for reward_function in self.reward_functions:

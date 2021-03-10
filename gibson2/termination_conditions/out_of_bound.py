@@ -13,7 +13,7 @@ class OutOfBound(BaseTerminationCondition):
         self.fall_off_thresh = self.config.get(
             'fall_off_thresh', 0.03)
 
-    def get_termination(self, task, env):
+    def get_termination(self, task, env, robot_id=0):
         """
         Return whether the episode should terminate.
         Terminate if the robot goes outside the valid region
@@ -22,11 +22,10 @@ class OutOfBound(BaseTerminationCondition):
         :param env: environment instance
         :return: done, info
         """
-
         done = False
         # fall off the cliff of valid region
         if isinstance(env.scene, InteractiveIndoorScene):
-            robot_z = env.robots[0].get_position()[2]
+            robot_z = env.robots[robot_id].get_position()[2]
             if robot_z < (env.scene.get_floor_height() - self.fall_off_thresh):
                 done = True
         success = False

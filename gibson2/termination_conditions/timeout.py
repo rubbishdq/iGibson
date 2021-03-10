@@ -11,7 +11,7 @@ class Timeout(BaseTerminationCondition):
         super(Timeout, self).__init__(config)
         self.max_step = self.config.get('max_step', 500)
 
-    def get_termination(self, task, env):
+    def get_termination(self, task, env, robot_id=0):
         """
         Return whether the episode should terminate.
         Terminate if max_step steps have passed

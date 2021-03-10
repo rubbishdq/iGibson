@@ -20,6 +20,7 @@ import numpy as np
 import pybullet as p
 import time
 import logging
+from collections import defaultdict
 
 
 class iGibsonEnv(BaseEnv):
@@ -30,6 +31,7 @@ class iGibsonEnv(BaseEnv):
     def __init__(
         self,
         config_file,
+        num_robots=1,
         scene_id=None,
         mode='headless',
         action_timestep=1 / 10.0,
@@ -49,6 +51,7 @@ class iGibsonEnv(BaseEnv):
         :param automatic_reset: whether to automatic reset after an episode finishes
         """
         super(iGibsonEnv, self).__init__(config_file=config_file,
+                                         num_robots=num_robots,
                                          scene_id=scene_id,
                                          mode=mode,
                                          action_timestep=action_timestep,
@@ -118,6 +121,7 @@ class iGibsonEnv(BaseEnv):
         self.image_width = self.config.get('image_width', 128)
         self.image_height = self.config.get('image_height', 128)
         observation_space = OrderedDict()
+        share_observation_space = OrderedDict()
         sensors = OrderedDict()
         vision_modalities = []
         scan_modalities = []
@@ -125,44 +129,72 @@ class iGibsonEnv(BaseEnv):
         if 'task_obs' in self.output:
             observation_space['task_obs'] = self.build_obs_space(
                 shape=(self.task.task_obs_dim,), low=-np.inf, high=-np.inf)
+            share_observation_space['task_obs'] = self.build_obs_space(
+                shape=(self.task.task_obs_dim * self.num_robots,), low=-np.inf, high=-np.inf)
+
         if 'rgb' in self.output:
             observation_space['rgb'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3),
                 low=0.0, high=1.0)
+            share_observation_space['rgb'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 3 * self.num_robots),
+                low=0.0, high=1.0)
             vision_modalities.append('rgb')
+
         if 'depth' in self.output:
             observation_space['depth'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 1),
+                low=0.0, high=1.0)
+            share_observation_space['depth'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 1 * self.num_robots),
                 low=0.0, high=1.0)
             vision_modalities.append('depth')
         if 'pc' in self.output:
             observation_space['pc'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3),
                 low=-np.inf, high=np.inf)
+            share_observation_space['pc'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 3 * self.num_robots),
+                low=-np.inf, high=np.inf)
             vision_modalities.append('pc')
         if 'optical_flow' in self.output:
             observation_space['optical_flow'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 2),
+                low=-np.inf, high=np.inf)
+            share_observation_space['optical_flow'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 2 * self.num_robots),
                 low=-np.inf, high=np.inf)
             vision_modalities.append('optical_flow')
         if 'scene_flow' in self.output:
             observation_space['scene_flow'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3),
                 low=-np.inf, high=np.inf)
+            share_observation_space['scene_flow'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 3 * self.num_robots),
+                low=-np.inf, high=np.inf)
             vision_modalities.append('scene_flow')
         if 'normal' in self.output:
             observation_space['normal'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3),
+                low=-np.inf, high=np.inf)
+            share_observation_space['normal'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 3 * self.num_robots),
                 low=-np.inf, high=np.inf)
             vision_modalities.append('normal')
         if 'seg' in self.output:
             observation_space['seg'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 1),
                 low=0.0, high=1.0)
+            share_observation_space['seg'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 1 * self.num_robots),
+                low=0.0, high=1.0)
             vision_modalities.append('seg')
         if 'rgb_filled' in self.output:  # use filler
             observation_space['rgb_filled'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3),
+                low=0.0, high=1.0)
+            share_observation_space['rgb_filled'] = self.build_obs_space(
+                shape=(self.image_height, self.image_width, 3 * self.num_robots),
                 low=0.0, high=1.0)
             vision_modalities.append('rgb_filled')
         if 'scan' in self.output:
@@ -172,6 +204,9 @@ class iGibsonEnv(BaseEnv):
             observation_space['scan'] = self.build_obs_space(
                 shape=(self.n_horizontal_rays * self.n_vertical_beams, 1),
                 low=0.0, high=1.0)
+            share_observation_space['scan'] = self.build_obs_space(
+                shape=(self.n_horizontal_rays * self.n_vertical_beams, 1 * self.num_robots),
+                low=0.0, high=1.0)
             scan_modalities.append('scan')
         if 'occupancy_grid' in self.output:
             self.grid_resolution = self.config.get('grid_resolution', 128)
@@ -180,12 +215,19 @@ class iGibsonEnv(BaseEnv):
                                                        shape=(self.grid_resolution,
                                                               self.grid_resolution, 1))
             observation_space['occupancy_grid'] = self.occupancy_grid_space
+            share_observation_space['occupancy_grid'] = gym.spaces.Box(low=0.0,
+                                                       high=1.0,
+                                                       shape=(self.grid_resolution,
+                                                              self.grid_resolution, 1 * self.num_robots))
             scan_modalities.append('occupancy_grid')
 
         if 'bump' in self.output:
             observation_space['bump'] = gym.spaces.Box(low=0.0,
                                                        high=1.0,
                                                        shape=(1,))
+            share_observation_space['bump'] = gym.spaces.Box(low=0.0,
+                                                       high=1.0,
+                                                       shape=(1 * self.num_robots,))
             sensors['bump'] = BumpSensor(self)
 
         if len(vision_modalities) > 0:
@@ -195,22 +237,23 @@ class iGibsonEnv(BaseEnv):
             sensors['scan_occ'] = ScanSensor(self, scan_modalities)
 
         self.observation_space = gym.spaces.Dict(observation_space)
+        self.share_observation_space = gym.spaces.Dict(share_observation_space)
         self.sensors = sensors
 
-    def load_action_space(self):
+    def load_action_space(self, robot_id=0):
         """
         Load action space
         """
-        self.action_space = self.robots[0].action_space
+        self.action_space = self.robots[robot_id].action_space
 
     def load_miscellaneous_variables(self):
         """
         Load miscellaneous variables for book keeping
         """
         self.current_step = 0
-        self.collision_step = 0
+        self.collision_step = np.zeros(self.num_robots)
         self.current_episode = 0
-        self.collision_links = []
+        self.collision_links = [[]] * self.num_robots
 
     def load(self):
         """
@@ -218,8 +261,8 @@ class iGibsonEnv(BaseEnv):
         """
         super(iGibsonEnv, self).load()
         self.load_task_setup()
-        self.load_observation_space()
         self.load_action_space()
+        self.load_observation_space()
         self.load_miscellaneous_variables()
 
     def get_state(self, collision_links=[]):
@@ -229,23 +272,22 @@ class iGibsonEnv(BaseEnv):
         :param collision_links: collisions from last physics timestep
         :return: observation as a dictionary
         """
-        state = OrderedDict()
+        state = defaultdict(list)
+
         if 'task_obs' in self.output:
             state['task_obs'] = self.task.get_task_obs(self)
-        if 'vision' in self.sensors:
-            vision_obs = self.sensors['vision'].get_obs(self)
-            for modality in vision_obs:
-                state[modality] = vision_obs[modality]
-        if 'scan_occ' in self.sensors:
-            scan_obs = self.sensors['scan_occ'].get_obs(self)
-            for modality in scan_obs:
-                state[modality] = scan_obs[modality]
-        if 'bump' in self.sensors:
-            state['bump'] = self.sensors['bump'].get_obs(self)
 
+        for key in self.sensors.keys():
+            if key in ['vision','scan_occ']:
+                key_obs = self.sensors[key].get_obs(self)
+                for modality in key_obs[0]:
+                    for robot_id in range(self.num_robots):
+                        state[modality].append(key_obs[robot_id][modality])
+            if key in ['bump']:
+                state[key] = self.sensors[key].get_obs(self)
         return state
 
-    def run_simulation(self):
+    def run_simulation(self, robot_id):
         """
         Run simulation for one action timestep (same as one render timestep in Simulator class)
 
@@ -253,10 +295,10 @@ class iGibsonEnv(BaseEnv):
         """
         self.simulator_step()
         collision_links = list(p.getContactPoints(
-            bodyA=self.robots[0].robot_ids[0]))
-        return self.filter_collision_links(collision_links)
+            bodyA=self.robots[robot_id].robot_ids[0]))
+        return self.filter_collision_links(collision_links, robot_id)
 
-    def filter_collision_links(self, collision_links):
+    def filter_collision_links(self, collision_links, robot_id):
         """
         Filter out collisions that should be ignored
 
@@ -274,19 +316,19 @@ class iGibsonEnv(BaseEnv):
                 continue
 
             # ignore self collision with robot link a (body b is also robot itself)
-            if item[2] == self.robots[0].robot_ids[0] and item[4] in self.collision_ignore_link_a_ids:
+            if item[2] == self.robots[robot_id].robot_ids[0] and item[4] in self.collision_ignore_link_a_ids:
                 continue
             new_collision_links.append(item)
         return new_collision_links
 
-    def populate_info(self, info):
+    def populate_info(self, info, robot_id):
         """
         Populate info dictionary with any useful information
         """
         info['episode_length'] = self.current_step
-        info['collision_step'] = self.collision_step
+        info['collision_step'] = self.collision_step[robot_id]
 
-    def step(self, action):
+    def step(self, actions):
         """
         Apply robot's action.
         Returns the next state, reward, done and info,
@@ -299,26 +341,36 @@ class iGibsonEnv(BaseEnv):
         :return: info: info dictionary with any useful information
         """
         self.current_step += 1
-        if action is not None:
-            self.robots[0].apply_action(action)
-        collision_links = self.run_simulation()
-        self.collision_links = collision_links
-        self.collision_step += int(len(collision_links) > 0)
 
-        state = self.get_state(collision_links)
-        info = {}
-        reward, info = self.task.get_reward(
-            self, collision_links, action, info)
-        done, info = self.task.get_termination(
-            self, collision_links, action, info)
-        self.task.step(self)
-        self.populate_info(info)
+        for robot_id, action in enumerate(actions):
+            if action is not None:
+                self.robots[robot_id].apply_action(action)
 
-        if done and self.automatic_reset:
-            info['last_observation'] = state
-            state = self.reset()
+            collision_links = self.run_simulation(robot_id)
+            self.collision_links[robot_id] = collision_links
+            self.collision_step[robot_id] += int(len(collision_links) > 0)
 
-        return state, reward, done, info
+        state = self.get_state()
+
+        dones = []
+        rewards = []
+        infos = []
+        for robot_id in range(self.num_robots):
+            info = {}
+            reward, info = self.task.get_reward(self, robot_id, self.collision_links[robot_id], actions[robot_id], info)
+            done, info = self.task.get_termination(self, robot_id, self.collision_links[robot_id], actions[robot_id], info)
+            self.task.step(self)
+            self.populate_info(info, robot_id)
+
+            dones.append(done)
+            rewards.append([reward])
+            infos.append(info)
+
+        # if done and self.automatic_reset:
+        #     info['last_observation'] = state
+        #     state = self.reset()
+        print(rewards)
+        return state, rewards, dones, infos
 
     def check_collision(self, body_id):
         """
@@ -423,8 +475,8 @@ class iGibsonEnv(BaseEnv):
         """
         self.current_episode += 1
         self.current_step = 0
-        self.collision_step = 0
-        self.collision_links = []
+        self.collision_step = np.zeros(self.num_robots)
+        self.collision_links = [[]] * self.num_robots
 
     def randomize_domain(self):
         """
@@ -445,7 +497,9 @@ class iGibsonEnv(BaseEnv):
         """
         self.randomize_domain()
         # move robot away from the scene
-        self.robots[0].set_position([100.0, 100.0, 100.0])
+        for robot_id in range(self.num_robots):
+            self.robots[robot_id].set_position([100.0+robot_id, 100.0+robot_id, 100.0+robot_id])
+        
         self.task.reset_scene(self)
         self.task.reset_agent(self)
         self.simulator.sync()

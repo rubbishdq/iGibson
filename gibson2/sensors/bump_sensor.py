@@ -21,5 +21,5 @@ class BumpSensor(BaseSensor):
 
         :return: Bump sensor reading
         """
-        has_collision = float(len(env.collision_links) > 0)
+        has_collision = [float(len(env.collision_links[robot_id]) > 0) for robot_id in range(self.num_robots)]
         return has_collision

@@ -13,7 +13,7 @@ class CollisionReward(BaseRewardFunction):
             'collision_reward_weight', -0.1
         )
 
-    def get_reward(self, task, env):
+    def get_reward(self, task, env, robot_id=0):
         """
         Reward is self.collision_reward_weight if there is collision
         in the last timestep
@@ -22,5 +22,5 @@ class CollisionReward(BaseRewardFunction):
         :param env: environment instance
         :return: reward
         """
-        has_collision = float(len(env.collision_links) > 0)
+        has_collision = float(len(env.collision_links[robot_id]) > 0)
         return has_collision * self.collision_reward_weight

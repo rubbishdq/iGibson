@@ -12,7 +12,7 @@ class BaseTerminationCondition():
         self.config = config
 
     @abstractmethod
-    def get_termination(self, task, env):
+    def get_termination(self, task, env, robot_id=0):
         """
         Return whether the episode should terminate. Overwritten by subclasses.
 

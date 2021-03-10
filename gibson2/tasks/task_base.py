@@ -10,6 +10,7 @@ class BaseTask():
     __metaclass__ = ABCMeta
     def __init__(self, env):
         self.config = env.config
+        self.num_robots = env.num_robots
         self.reward_functions = []
         self.termination_conditions = []
         self.task_obs_dim = self.config.get('task_obs_dim', 0)
@@ -32,7 +33,7 @@ class BaseTask():
         """
         raise NotImplementedError()
 
-    def get_reward(self, env, collision_links=[], action=None, info={}):
+    def get_reward(self, env, robot_id=0, collision_links=[], action=None, info={}):
         """
         Aggreate reward functions
 
@@ -45,11 +46,11 @@ class BaseTask():
         """
         reward = 0.0
         for reward_function in self.reward_functions:
-            reward += reward_function.get_reward(self, env)
+            reward += reward_function.get_reward(self, env, robot_id)
 
         return reward, info
 
-    def get_termination(self, env, collision_links=[], action=None, info={}):
+    def get_termination(self, env, robot_id=0, collision_links=[], action=None, info={}):
         """
         Aggreate termination conditions
 
@@ -60,10 +61,11 @@ class BaseTask():
         :return done: whether the episode has terminated
         :return info: additional info
         """
+
         done = False
         success = False
         for condition in self.termination_conditions:
-            d, s = condition.get_termination(self, env)
+            d, s = condition.get_termination(self, env, robot_id)
             done = done or d
             success = success or s
         info['done'] = done

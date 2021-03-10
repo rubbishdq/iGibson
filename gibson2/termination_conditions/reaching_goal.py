@@ -12,7 +12,7 @@ class ReachingGoal(BaseTerminationCondition):
         super(ReachingGoal, self).__init__(config)
         self.dist_tol = self.config.get('dist_tol', 0.5)
 
-    def get_termination(self, task, env):
+    def get_termination(self, task, env, robot_id=0):
         """
         Return whether the episode should terminate.
         Terminate if reaching goal is reached (distance below threshold)
@@ -22,7 +22,7 @@ class ReachingGoal(BaseTerminationCondition):
         :return: done, info
         """
         done = l2_distance(
-            env.robots[0].get_end_effector_position(),
+            env.robots[robot_id].get_end_effector_position(),
             task.target_pos) < self.dist_tol
         success = done
         return done, success

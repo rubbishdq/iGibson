@@ -9,6 +9,7 @@ class BaseSensor():
     __metaclass__ = ABCMeta
     def __init__(self, env):
         self.config = env.config
+        self.num_robots = env.num_robots
 
     @abstractmethod
     def get_obs(self, env):
