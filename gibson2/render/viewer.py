@@ -20,7 +20,7 @@ class Viewer:
                  simulator=None,
                  renderer=None,
                  min_cam_z=-1e6,
-                 ):
+                 num_robots=2):
         """
         iGibson GUI (Viewer) for navigation, manipulation and motion planning / execution
 
@@ -50,6 +50,7 @@ class Viewer:
         self.renderer = renderer
         self.simulator = simulator
         self.cid = []
+        self.num_robots=num_robots
 
         # Flag to control if the mouse interface is in navigation, manipulation
         # or motion planning/execution mode
@@ -62,11 +63,13 @@ class Viewer:
 
         cv2.namedWindow('ExternalView')
         cv2.moveWindow("ExternalView", 0, 0)
-        cv2.namedWindow('RobotView')
         cv2.setMouseCallback('ExternalView', self.mouse_callback)
         self.create_visual_object()
         self.planner = None
         self.block_command = False
+        for i in range(num_robots):
+            cv2.namedWindow('Robot{}View'.format(i))
+
 
     def setup_motion_planner(self, planner=None):
         """
@@ -438,6 +441,7 @@ class Viewer:
         """
         Show help text
         """
+        self.show_help=160
         if self.show_help < 0:
             return
 
@@ -635,11 +639,12 @@ class Viewer:
 
         if self.renderer is not None:
             frames = self.renderer.render_robot_cameras(modes=('rgb'))
-            if len(frames) > 0:
-                frame = cv2.cvtColor(np.concatenate(
-                    frames, axis=1), cv2.COLOR_RGB2BGR)
-                cv2.imshow('RobotView', frame)
-
+            for i in range(self.num_robots):
+                if len(frames[i]) > 0:
+                    frame = cv2.cvtColor(np.concatenate(
+                        frames[i], axis=1), cv2.COLOR_RGB2BGR)
+                    cv2.imshow('Robot{}View'.format(i), frame)
+                
 
 if __name__ == '__main__':
     viewer = Viewer()

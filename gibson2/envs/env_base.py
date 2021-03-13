@@ -76,7 +76,8 @@ class BaseEnv(gym.Env):
                                        'vertical_fov', 90),
                                    device_idx=device_idx,
                                    render_to_tensor=render_to_tensor,
-                                   rendering_settings=settings)
+                                   rendering_settings=settings,
+                                   num_robots=num_robots)
         self.load()
 
     def reload(self, config_file):

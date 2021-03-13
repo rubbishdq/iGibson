@@ -37,7 +37,8 @@ class Simulator:
                  vertical_fov=90,
                  device_idx=0,
                  render_to_tensor=False,
-                 rendering_settings=MeshRendererSettings()):
+                 rendering_settings=MeshRendererSettings(),
+                 num_robots=2):
         """
         :param gravity: gravity on z direction.
         :param physics_timestep: timestep of physical simulation, p.stepSimulation()
@@ -55,7 +56,7 @@ class Simulator:
         self.physics_timestep = physics_timestep
         self.render_timestep = render_timestep
         self.mode = mode
-
+        self.num_robots=num_robots
         # TODO: remove this, currently used for testing only
         self.objects = []
 
@@ -105,7 +106,7 @@ class Simulator:
         Attach a debugging viewer to the renderer.
         This will make the step much slower so should be avoided when training agents
         """
-        self.viewer = Viewer(simulator=self, renderer=self.renderer)
+        self.viewer = Viewer(simulator=self, renderer=self.renderer, num_robots=self.num_robots)
 
     def reload(self):
         """
