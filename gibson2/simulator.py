@@ -38,7 +38,8 @@ class Simulator:
                  device_idx=0,
                  render_to_tensor=False,
                  rendering_settings=MeshRendererSettings(),
-                 num_robots=2):
+                 num_robots=2
+                 ):
         """
         :param gravity: gravity on z direction.
         :param physics_timestep: timestep of physical simulation, p.stepSimulation()
@@ -52,6 +53,7 @@ class Simulator:
         :param rendering_settings: rendering setting
         """
         # physics simulator
+        self.sensor = None
         self.gravity = gravity
         self.physics_timestep = physics_timestep
         self.render_timestep = render_timestep
@@ -85,6 +87,7 @@ class Simulator:
         self.rendering_settings = rendering_settings
         self.viewer = None
         self.load()
+        
 
         self.class_name_to_class_id = get_class_name_to_class_id()
         self.body_links_awake = 0
@@ -106,7 +109,7 @@ class Simulator:
         Attach a debugging viewer to the renderer.
         This will make the step much slower so should be avoided when training agents
         """
-        self.viewer = Viewer(simulator=self, renderer=self.renderer, num_robots=self.num_robots)
+        self.viewer = Viewer(simulator=self, renderer=self.renderer, num_robots=self.num_robots, sensor=self.sensor)
 
     def reload(self):
         """

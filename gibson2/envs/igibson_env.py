@@ -58,6 +58,7 @@ class iGibsonEnv(BaseEnv):
                                          physics_timestep=physics_timestep,
                                          device_idx=device_idx,
                                          render_to_tensor=render_to_tensor)
+        
         self.automatic_reset = automatic_reset
 
     def load_task_setup(self):
@@ -232,6 +233,7 @@ class iGibsonEnv(BaseEnv):
 
         if len(vision_modalities) > 0:
             sensors['vision'] = VisionSensor(self, vision_modalities)
+            self.simulator.sensor = VisionSensor(self, vision_modalities)
 
         if len(scan_modalities) > 0:
             sensors['scan_occ'] = ScanSensor(self, scan_modalities)

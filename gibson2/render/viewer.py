@@ -12,6 +12,7 @@ from gibson2.utils.utils import rotate_vector_2d
 import time
 
 
+
 class Viewer:
     def __init__(self,
                  initial_pos=[0, 0, 1.2],
@@ -20,7 +21,8 @@ class Viewer:
                  simulator=None,
                  renderer=None,
                  min_cam_z=-1e6,
-                 num_robots=2):
+                 num_robots=2,
+                 sensor=None):
         """
         iGibson GUI (Viewer) for navigation, manipulation and motion planning / execution
 
@@ -67,8 +69,10 @@ class Viewer:
         self.create_visual_object()
         self.planner = None
         self.block_command = False
+        self.sensor = sensor
         for i in range(num_robots):
-            cv2.namedWindow('Robot{}View'.format(i))
+            cv2.namedWindow('Robot{}_rgb_View'.format(i))
+            cv2.namedWindow('Robot{}_depth_View'.format(i))
 
 
     def setup_motion_planner(self, planner=None):
@@ -519,7 +523,22 @@ class Viewer:
             cv2.putText(frame, help_text, (10, 360),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, second_color, 1, cv2.LINE_AA)
         self.show_help -= 1
+    
+    def get_depth(self, raw_vision_obs):
+        """
+        :return: depth sensor reading, normalized to [0.0, 1.0]
+        """
+        depth = -raw_vision_obs[:, :, 2:3]
+        # 0.0 is a special value for invalid entries
+        depth[depth < 0.5] = 0.0
+        depth[depth > 5.0] = 0.0
 
+        # re-scale depth to [0.0, 1.0]
+        depth /= 5.0
+        #depth = self.noise_model.add_noise(depth)
+
+        return depth
+    
     def update(self):
         """
         Update images of Viewer
@@ -638,12 +657,19 @@ class Viewer:
             self.frame_idx += 1
 
         if self.renderer is not None:
-            frames = self.renderer.render_robot_cameras(modes=('rgb'))
-            for i in range(self.num_robots):
-                if len(frames[i]) > 0:
-                    frame = cv2.cvtColor(np.concatenate(
-                        frames[i], axis=1), cv2.COLOR_RGB2BGR)
-                    cv2.imshow('Robot{}View'.format(i), frame)
+            modes=['rgb','3d']
+            frames_a = {'rgb': None, '3d': None}
+            for mode in modes:
+                frames = self.renderer.render_robot_cameras(modes=(mode))
+                for i in range(self.num_robots):
+                    if len(frames[i]) > 0:
+                        frames_a[mode] = np.concatenate(frames[i], axis=1)
+                        if mode == 'rgb':
+                            frame = cv2.cvtColor(frames_a[mode], cv2.COLOR_BGR2RGB)
+                            cv2.imshow('Robot{}_{}_View'.format(i, mode), frame)
+                        if mode == '3d':
+                            frame = self.simulator.sensor.get_depth(frames_a)
+                            cv2.imshow('Robot{}_depth_View'.format(i), frame)
                 
 
 if __name__ == '__main__':
