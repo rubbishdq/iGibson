@@ -524,21 +524,6 @@ class Viewer:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, second_color, 1, cv2.LINE_AA)
         self.show_help -= 1
     
-    def get_depth(self, raw_vision_obs):
-        """
-        :return: depth sensor reading, normalized to [0.0, 1.0]
-        """
-        depth = -raw_vision_obs[:, :, 2:3]
-        # 0.0 is a special value for invalid entries
-        depth[depth < 0.5] = 0.0
-        depth[depth > 5.0] = 0.0
-
-        # re-scale depth to [0.0, 1.0]
-        depth /= 5.0
-        #depth = self.noise_model.add_noise(depth)
-
-        return depth
-    
     def update(self):
         """
         Update images of Viewer
