@@ -38,11 +38,12 @@ class Quadrotor(LocomotorRobot):
         """
         Set up discrete action space
         """
-        self.action_list = [[self.torque, 0, 0, 0, 0, 0], [-self.torque, 0, 0, 0, 0, 0],
-                            [0, self.torque, 0, 0, 0, 0], [
-                                0, -self.torque, 0, 0, 0, 0],
-                            [0, 0, self.torque, 0, 0, 0], [
-                                0, 0, -self.torque, 0, 0, 0],
+        self.action_list = [[self.torque, 0, 0, 0, 0, 0], 
+                            [-self.torque, 0, 0, 0, 0, 0],
+                            [0, self.torque, 0, 0, 0, 0], 
+                            [0, -self.torque, 0, 0, 0, 0],
+                            [0, 0, self.torque, 0, 0, 0], 
+                            [0, 0, -self.torque, 0, 0, 0],
                             [0, 0, 0, 0, 0, 0]]
         self.action_space = gym.spaces.Discrete(len(self.action_list))
         self.setup_keys_to_action()

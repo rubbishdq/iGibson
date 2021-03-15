@@ -7,6 +7,7 @@ from gibson2.robots.jr2_kinova_robot import JR2_Kinova
 from gibson2.robots.freight_robot import Freight
 from gibson2.robots.fetch_robot import Fetch
 from gibson2.robots.locobot_robot import Locobot
+from gibson2.robots.quadrotor_robot import Quadrotor
 from gibson2.simulator import Simulator
 from gibson2.scenes.empty_scene import EmptyScene
 from gibson2.scenes.stadium_scene import StadiumScene
@@ -199,6 +200,8 @@ class BaseEnv(gym.Env):
                 robot = Fetch(self.config)
             elif self.config['robot'] == 'Locobot':
                 robot = Locobot(self.config)
+            elif self.config['robot'] == 'Quadrotor':
+                robot = Quadrotor(self.config)
             else:
                 raise Exception(
                     'unknown robot type: {}'.format(self.config['robot']))
