@@ -6,13 +6,14 @@ from collections import defaultdict
 
 class iGibsonEnv(object):
 
-    def __init__(self, args):
+    def __init__(self, args, scene_id):
         self.num_agents = args.num_agents
         self.mode = args.mode
         self.scenario_name = args.scenario_name
         self.config = gibson2.__path__[0] + '/examples/configs/' + str(self.scenario_name) + '.yaml'
         self.env = inner_iGibsonEnv(config_file=self.config,
                                     num_robots=self.num_agents,
+                                    scene_id=scene_id,
                                     mode=self.mode,
                                     action_timestep=1.0 / 10.0,
                                     physics_timestep=1.0 / 40.0,
