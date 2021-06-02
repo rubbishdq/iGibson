@@ -1,6 +1,6 @@
 # scene
 scene: igibson
-scene_id: Rs_int
+scene_id: Benevolence_1_int
 build_graph: true
 load_texture: true
 pybullet_load_texture: true
@@ -8,6 +8,13 @@ trav_map_type: no_obj
 trav_map_resolution: 0.1
 trav_map_erosion: 3
 should_open_all_doors: true
+load_object_categories: [
+  bottom_cabinet,
+  bottom_cabinet_no_top,
+  top_cabinet,
+  dishwasher,
+  fridge,
+]
 
 # domain randomization
 texture_randomization_freq: null
@@ -15,32 +22,25 @@ object_randomization_freq: null
 
 # robot
 robot: Quadrotor
-is_discrete: true
+is_discrete: false
 torque: 0.5
+position_control: true
 
 # task
-task: room_rearrangement
-load_object_categories: [
-  bottom_cabinet,
-  bottom_cabinet_no_top,
-  top_cabinet,
-  dishwasher,
-  fridge,
-  microwave,
-  oven,
-  washer
-  dryer,
-]
+# TODO:
+task: room_exploration
+# init_position: 
+# max_movement: 1.
 
 # reward
+# TODO:
 potential_reward_weight: 1.0
-prismatic_joint_reward_scale: 3.0
-revolute_joint_reward_scale: 1.0
 
 # discount factor
 discount_factor: 0.99
 
 # termination condition
+# TODO:
 max_step: 50
 max_collisions_allowed: 500
 
@@ -74,7 +74,3 @@ laser_link_name: laser_link
 # sensor noise
 depth_noise_rate: 0.0
 scan_noise_rate: 0.0
-
-# visual objects
-visual_object_at_initial_target_pos: true
-target_visual_object_visible_to_agent: false

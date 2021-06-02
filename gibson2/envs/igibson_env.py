@@ -6,6 +6,7 @@ from gibson2.tasks.point_nav_random_task import PointNavRandomTask
 from gibson2.tasks.interactive_nav_random_task import InteractiveNavRandomTask
 from gibson2.tasks.dynamic_nav_random_task import DynamicNavRandomTask
 from gibson2.tasks.reaching_random_task import ReachingRandomTask
+from gibson2.tasks.room_exploration_task import RoomExplorationTask
 from gibson2.sensors.scan_sensor import ScanSensor
 from gibson2.sensors.vision_sensor import VisionSensor
 from gibson2.robots.robot_base import BaseRobot
@@ -101,6 +102,8 @@ class iGibsonEnv(BaseEnv):
             self.task = ReachingRandomTask(self)
         elif self.config['task'] == 'room_rearrangement':
             self.task = RoomRearrangementTask(self)
+        elif self.config['task'] == 'room_exploration':
+            self.task = RoomExplorationTask(self)
         else:
             self.task = None
 
@@ -500,8 +503,8 @@ class iGibsonEnv(BaseEnv):
         self.randomize_domain()
         # move robot away from the scene
         for robot_id in range(self.num_robots):
-            self.robots[robot_id].set_position([100.0+robot_id, 100.0+robot_id, 100.0+robot_id])
-        
+            self.robots[robot_id].set_position([100.0 + robot_id, 100.0 + robot_id, 100.0 + robot_id])
+
         self.task.reset_scene(self)
         self.task.reset_agent(self)
         self.simulator.sync()

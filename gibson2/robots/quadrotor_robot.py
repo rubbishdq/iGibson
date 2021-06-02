@@ -22,6 +22,11 @@ class Quadrotor(LocomotorRobot):
                                 scale=config.get("robot_scale", 1.0),
                                 is_discrete=config.get("is_discrete", False),
                                 control="torque")
+        # FIXME:
+        self.action_dim = 3
+        self.previous_position = config.init_position  # get
+        self.position_control = config.position_control
+        self.max_movement = config.max_movement
 
     def set_up_continuous_action_space(self):
         """
@@ -31,7 +36,8 @@ class Quadrotor(LocomotorRobot):
                                            low=-1.0,
                                            high=1.0,
                                            dtype=np.float32)
-        self.action_high = self.torque * np.ones([self.action_dim])
+        action_scale = self.max_movement if self.position_control else self.torque
+        self.action_high = action_scale * np.ones([self.action_dim])
         self.action_low = -self.action_high
 
     def set_up_discrete_action_space(self):
@@ -52,10 +58,14 @@ class Quadrotor(LocomotorRobot):
         """
         Apply policy action. Zero gravity.
         """
-        real_action = self.policy_action_to_robot_action(action)
-        p.setGravity(0, 0, 0)
-        p.resetBaseVelocity(
-            self.robot_ids[0], real_action[:3], real_action[3:])
+        if not self.position_control:
+            real_action = self.policy_action_to_robot_action(action)
+            p.setGravity(0, 0, 0)
+            p.resetBaseVelocity(
+                self.robot_ids[0], real_action[:3], real_action[3:])
+        else:
+            # FIXME: calculate pose
+            raise NotImplementedError
 
     def setup_keys_to_action(self):
         self.keys_to_action = {
