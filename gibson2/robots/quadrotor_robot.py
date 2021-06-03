@@ -3,6 +3,7 @@ import numpy as np
 import pybullet as p
 
 from gibson2.robots.robot_locomotor import LocomotorRobot
+from gibson2.utils.utils import lookAt_to_pose
 
 
 class Quadrotor(LocomotorRobot):
@@ -24,7 +25,7 @@ class Quadrotor(LocomotorRobot):
                                 control="torque")
         # FIXME:
         self.action_dim = 3
-        self.previous_position = config.init_position  # get
+        self.cur_position = config.init_position  # get
         self.position_control = config.position_control
         self.max_movement = config.max_movement
 
@@ -64,6 +65,11 @@ class Quadrotor(LocomotorRobot):
             p.resetBaseVelocity(
                 self.robot_ids[0], real_action[:3], real_action[3:])
         else:
+            lookat_dir = np.array(action) - self.cur_position
+            tgt_pos = self.previous_position + 2*lookat_dir
+            pos, xyzw = lookAt_to_pose(np.array(action), tgt_pos, np.array([0,1,0]))
+            self.set_position_orientation(pos, xyzw)
+            self.cur_position = np.copy(pos)
             # FIXME: calculate pose
             raise NotImplementedError
 

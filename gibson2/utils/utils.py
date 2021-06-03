@@ -141,3 +141,24 @@ def quat_pos_to_mat(pos, quat):
     mat[:3, -1] = pos
     # Return: roll, pitch, yaw
     return mat
+
+# Used to calculate the robot's next pose given the lookat direction.
+def lookAt_to_pose(curPos, tgtPos, upVec):
+    """ Use current position and target position and up vector to decide the lookat
+    matrix (global to local), and then convert into robot's pose (cam2world). 
+    Ref: https://learnopengl-cn.readthedocs.io/zh/latest/01%20Getting%20started/09%20Camera/"""
+    camDir = (curPos - tgtPos) / np.linalg.norm(curPos - tgtPos)
+    camRight = np.cross(upVec, camDir)
+    camRight = camRight / np.linalg.norm(camRight)
+    camUp = np.cross(camDir, camRight)
+    R = np.stack([camRight, camUp, camDir], dim=0)
+    Rh = np.concatenate([np.concatenate([R, np.zeros((3,1))], 1), np.array([[0,0,0,1]]), 0)
+    t = np.concatenate([np.eye(3), np.transpose(np.expand_dims(-curPos, 0))], 1)
+    th = np.concatenate([t, np.array([[0,0,0,1]])], 0)
+    posMat = Rh.dot(th)
+    cam2world = np.linalg.inv(posMat)
+    xyzw = quadXYZWFromRotMat(cam2world[:3,:3])
+    return np.copy(curPos), xyzw
+
+
+
