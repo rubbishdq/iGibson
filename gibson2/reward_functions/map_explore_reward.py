@@ -15,4 +15,9 @@ class MapExploreReward(BaseRewardFunction):
         """
         TODO:
         """
-        raise NotImplementedError
+        gmap = task.gmap
+        obs = env.get_state()  # local map
+        # obs type: {'rgb': np.array, 'depth': np.array}
+        pos = env.robot[robot_id].get_position()  # FIXME: Multi-agent support
+        rpy = env.robots[robot_id].get_rpy()
+        return 0.0

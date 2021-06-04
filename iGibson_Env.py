@@ -49,7 +49,7 @@ class iGibsonEnv(object):
 
     def generate_share_obs(self, obs):
         share_obs = {}
-        for key in obs.keys():
+        for key in obs.keys():  # rgb, depth
             # [agent, height, width, channel]
             obs[key] = np.array(obs[key])
             # [height, width, channel*agent]
@@ -63,6 +63,6 @@ class iGibsonEnv(object):
         obs, rewards, dones, infos = self.env.step(actions)
         obs, share_obs = self.generate_share_obs(obs)
         return obs, share_obs, rewards, dones, infos, None
- 
+
     def close(self):
         self.env.close()

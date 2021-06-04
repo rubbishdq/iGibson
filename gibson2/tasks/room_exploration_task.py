@@ -14,6 +14,7 @@ import numpy as np
 
 import cv2
 from sklearn.neighbors import NearestNeighbors
+import logging
 
 # For simplicity, we set the global map's coordinate same as the env's coordinate.
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
@@ -153,16 +154,20 @@ class RoomExplorationTask(BaseTask):
             MapExploreReward(self.config),
         ]
 
-        self.initial_pos = np.array(self.config.get('initial_pos', [0, 0, 0]))
-        self.initial_orn = np.array(self.config.get('initial_orn', [0, 0, 0]))
+        self.random_init = False
+        self.initial_pos_all = np.array(self.config.get('initial_pos', [[0, 0, 0]]))
+        self.initial_orn_all = np.array(self.config.get('initial_orn', [[0, 0, 0]]))
+        assert len(self.initial_pos_all.shape) == 2 and self.initial_pos_all.shape[0] == self.num_robot, \
+            'initial_pos must be consistent with robot num'
+        assert len(self.initial_orn_all.shape) == 2 and self.initial_orn_all.shape[0] == self.num_robot, \
+            'initial_pos must be consistent with robot num'
+
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
         self.vfov = self.config.get('vertical_fov', 90)
         fx = (self.img_w / 2.0) / np.tan(self.vfov / 360.0 * np.pi)
-        K = np.array([[fx, 0.0, self.img_w/2.0], [0.0, fx, self.img_h/2.0], [0,0,1.0]])
-        self.gmap = gMap(K, (self.img_h, self.img_w), 8)
-
-        self.floor_num = 0
+        K = np.array([[fx, 0.0, self.img_w / 2.0], [0.0, fx, self.img_h / 2.0], [0, 0, 1.0]])
+        self.gmap = globalMap(K, (self.img_h, self.img_w), 8)
 
     def reset_scene(self, env):
         """
@@ -172,24 +177,57 @@ class RoomExplorationTask(BaseTask):
         """
         env.scene.reset_scene_objects()
 
+    def sample_initial_pose(self, env):
+        """
+        Sample robot initial pose
+
+        :param env: environment instance
+        :return: initial pose
+        """
+        _, initial_pos = env.scene.get_random_point(floor=self.floor_num)
+        initial_orn = np.array([0, 0, np.random.uniform(0, np.pi * 2)])
+        return initial_pos, initial_orn
+
     def reset_agent(self, env):
         """
         Reset robot initial pose.
 
         :param env: environment instance
         """
-        env.land(env.robots[0], self.initial_pos, self.initial_orn)
-        self.path_length = 0.0
-        self.robot_pos = self.initial_pos[:2]
-        self.geodesic_dist = self.get_geodesic_potential(env)
+        if self.random_init:
+            max_trials = 100
+            # cache pybullet state
+            # TODO: p.saveState takes a few seconds, need to speed up
+            state_id = p.saveState()
+            for _ in range(max_trials):
+                reset_success = np.zeros(self.num_robots, dtype=bool)
+                initial_pos = np.zeros((self.num_robots, 3))
+                initial_orn = np.zeros((self.num_robots, 3))
+                for robot_id in range(self.num_robots):
+                    initial_pos[robot_id], initial_orn[robot_id] = self.sample_initial_pose(env)
+                    reset_success[robot_id] = env.test_valid_position(env.robots[robot_id], initial_pos[robot_id], initial_orn[robot_id])
+                p.restoreState(state_id)
+                if np.all(reset_success):
+                    break
+            if not np.all(reset_success):
+                logging.warning("WARNING: Failed to reset robot without collision")
+            for robot_id in range(self.num_robots):
+                env.land(env.robots[robot_id], initial_pos[robot_id], initial_orn[robot_id])
+            p.removeState(state_id)
+        else:
+            for i in range(self.num_robots):
+                env.land(env.robots[i], self.initial_pos_all[i], self.initial_orn_all[i])
         for reward_function in self.reward_functions:
             reward_function.reset(self, env)
 
-    def get_termination(self, env, collision_links=[], action=None, info={}):
-        """
-        FIXME:
-        """
-        raise NotImplementedError
+    # def get_termination(self, env, collision_links=[], action=None, info={}):
+    #     """
+    #     Aggreate termination conditions and fill info
+    #     """
+    #     done, info = super(RoomExplorationTask, self).get_termination(
+    #         env, collision_links, action, info)
+    #     # TODO: finish explore global map?
+    #     return done, info
 
     def global_to_local(self, env, pos):
         """
@@ -202,11 +240,11 @@ class RoomExplorationTask(BaseTask):
         return rotate_vector_3d(pos - env.robots[0].get_position(),
                                 *env.robots[0].get_rpy())
 
-    def get_reward(self, env, robot_id=0, collision_links=[], action=None, info={}):
-        """
-        FIXME:
-        """
-        raise NotImplementedError
+    # def get_reward(self, env, robot_id=0, collision_links=[], action=None, info={}):
+    #     reward, info = super(RoomExplorationTask, self).get_reward(
+    #         env, robot_id, collision_links, action, info
+    #     )
+    #     return reward, info
 
     def get_task_obs(self, env):
         """
@@ -215,49 +253,6 @@ class RoomExplorationTask(BaseTask):
         :param env: environment instance
         :return: task-specific observation
         """
-        raise NotImplementedError
-
-    def get_shortest_path(self,
-                          env,
-                          from_initial_pos=False,
-                          entire_path=False):
-        """
-        Get the shortest path and geodesic distance from the robot or the initial position to the target position
-
-        :param env: environment instance
-        :param from_initial_pos: whether source is initial position rather than current position
-        :param entire_path: whether to return the entire shortest path
-        :return: shortest path and geodesic distance to the target position
-        """
-        if from_initial_pos:
-            source = self.initial_pos[:2]
-        else:
-            source = env.robots[0].get_position()[:2]
-        target = self.target_pos[:2]
-        return env.scene.get_shortest_path(
-            self.floor_num, source, target, entire_path=entire_path)
-
-    def step_visualization(self, env):
-        """
-        Step visualization
-
-        :param env: environment instance
-        """
-        if env.mode != 'gui':
-            return
-
-        self.initial_pos_vis_obj.set_position(self.initial_pos)
-        self.target_pos_vis_obj.set_position(self.target_pos)
-
-        if env.scene.build_graph:
-            shortest_path, _ = self.get_shortest_path(env, entire_path=True)
-            floor_height = env.scene.get_floor_height(self.floor_num)
-            num_nodes = min(self.num_waypoints_vis, shortest_path.shape[0])
-            for i in range(num_nodes):
-                self.waypoints_vis[i].set_position(
-                    pos=np.array([shortest_path[i][0],
-                                  shortest_path[i][1],
-                                  floor_height]))
-            for i in range(num_nodes, self.num_waypoints_vis):
-                self.waypoints_vis[i].set_position(
-                    pos=np.array([0.0, 0.0, 100.0]))
+        pos = env.robot[0].get_position()  # FIXME: Multi-agent support
+        rpy = env.robots[0].get_rpy()
+        return pos, rpy

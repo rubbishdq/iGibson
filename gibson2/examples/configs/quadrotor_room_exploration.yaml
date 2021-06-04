@@ -29,7 +29,8 @@ position_control: true
 # task
 # TODO:
 task: room_exploration
-# init_position: 
+initial_pos: [[0, 0, 0.2]]
+initial_orn: [[0, 0, 0]]
 # max_movement: 1.
 
 # reward

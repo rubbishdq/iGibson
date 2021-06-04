@@ -45,11 +45,11 @@ class Quadrotor(LocomotorRobot):
         """
         Set up discrete action space
         """
-        self.action_list = [[self.torque, 0, 0, 0, 0, 0], 
+        self.action_list = [[self.torque, 0, 0, 0, 0, 0],
                             [-self.torque, 0, 0, 0, 0, 0],
-                            [0, self.torque, 0, 0, 0, 0], 
+                            [0, self.torque, 0, 0, 0, 0],
                             [0, -self.torque, 0, 0, 0, 0],
-                            [0, 0, self.torque, 0, 0, 0], 
+                            [0, 0, self.torque, 0, 0, 0],
                             [0, 0, -self.torque, 0, 0, 0],
                             [0, 0, 0, 0, 0, 0]]
         self.action_space = gym.spaces.Discrete(len(self.action_list))
@@ -66,8 +66,8 @@ class Quadrotor(LocomotorRobot):
                 self.robot_ids[0], real_action[:3], real_action[3:])
         else:
             lookat_dir = np.array(action) - self.cur_position
-            tgt_pos = self.previous_position + 2*lookat_dir
-            pos, xyzw = lookAt_to_pose(np.array(action), tgt_pos, np.array([0,1,0]))
+            tgt_pos = self.previous_position + 2 * lookat_dir
+            pos, xyzw = lookAt_to_pose(np.array(action), tgt_pos, np.array([0, 1, 0]))
             self.set_position_orientation(pos, xyzw)
             self.cur_position = np.copy(pos)
             # FIXME: calculate pose
