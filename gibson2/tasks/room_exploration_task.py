@@ -106,8 +106,11 @@ class globalMap():
         if not (self.smap_points is None):
             snew_points = self.remove_duplicate(slpoints_in_gcoord)
             self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
+            increase_ratio = snew_points.shape[0] / self.smap_points.shape[0]
         else:
             self.smap_points = np.copy(slpoints_in_gcoord)
+            increase_ratio = 1.0
+        return increase_ratio
     
     def merge_sampled_local_obs(self, rgbd, cur_pose):
         # rgbd observation and agent's pose wrt global (env) coordinate.
@@ -122,8 +125,11 @@ class globalMap():
         if not (self.smap_points is None):
             snew_points = self.remove_duplicate(slpoints_in_gcoord)
             self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
+            increase_ratio = snew_points.shape[0] / self.smap_points.shape[0]
         else:
             self.smap_points = np.copy(slpoints_in_gcoord)
+            increase_ratio = 1.0
+        return increase_ratio
         
     def global_to_local(self, tgt_pose, sampled=True):
         # return transformed global map into local frame coordinate
