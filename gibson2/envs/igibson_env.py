@@ -373,7 +373,7 @@ class iGibsonEnv(BaseEnv):
         # if done and self.automatic_reset:
         #     info['last_observation'] = state
         #     state = self.reset()
-        print(rewards)
+        # print(rewards)
         return state, rewards, dones, infos
 
     def check_collision(self, body_id):
