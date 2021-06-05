@@ -9,11 +9,11 @@ trav_map_resolution: 0.1
 trav_map_erosion: 3
 should_open_all_doors: true
 load_object_categories: [
-  bottom_cabinet,
-  bottom_cabinet_no_top,
-  top_cabinet,
-  dishwasher,
-  fridge,
+  # bottom_cabinet,
+  # bottom_cabinet_no_top,
+  # top_cabinet,
+  # dishwasher,
+  # fridge,
 ]
 
 # domain randomization
@@ -23,15 +23,14 @@ object_randomization_freq: null
 # robot
 robot: Quadrotor
 is_discrete: false
-torque: 0.5
-position_control: true
+velocity: 0.5
+auto_navigation: true
 
 # task
 # TODO:
 task: room_exploration
-initial_pos: [[0, 0, 0.2]]
-initial_orn: [[0, 0, 0]]
-# max_movement: 1.
+random_pos: false
+initial_pos: [[-0.4, 0.7, 0.1]]
 
 # reward
 # TODO:
@@ -43,7 +42,7 @@ discount_factor: 0.99
 
 # termination condition
 # TODO:
-max_step: 50
+max_step: 500
 max_collisions_allowed: 500
 
 # misc config
@@ -51,7 +50,7 @@ initial_pos_z_offset: 0.1
 collision_ignore_link_a_ids: [0, 1, 2]  # ignore collisions with these robot links
 
 # sensor spec
-output: [rgb, depth]
+output: [rgb, depth, pc]
 # image
 # Primesense Carmine 1.09 short-range RGBD sensor
 # http://xtionprolive.com/primesense-carmine-1.09

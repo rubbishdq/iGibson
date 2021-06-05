@@ -31,14 +31,14 @@ class LocomotorRobot(BaseRobot):
             type(action_dim))
         self.action_dim = action_dim
 
+        self.torque_coef = torque_coef
+        self.velocity_coef = velocity_coef
+        self.scale = scale
+
         if self.is_discrete:
             self.set_up_discrete_action_space()
         else:
             self.set_up_continuous_action_space()
-
-        self.torque_coef = torque_coef
-        self.velocity_coef = velocity_coef
-        self.scale = scale
 
     def set_up_continuous_action_space(self):
         """

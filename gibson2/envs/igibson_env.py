@@ -346,7 +346,6 @@ class iGibsonEnv(BaseEnv):
         :return: info: info dictionary with any useful information
         """
         self.current_step += 1
-
         for robot_id, action in enumerate(actions):
             if action is not None:
                 self.robots[robot_id].apply_action(action)

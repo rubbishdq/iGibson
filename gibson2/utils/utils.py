@@ -151,14 +151,12 @@ def lookAt_to_pose(curPos, tgtPos, upVec):
     camRight = np.cross(upVec, camDir)
     camRight = camRight / np.linalg.norm(camRight)
     camUp = np.cross(camDir, camRight)
-    R = np.stack([camRight, camUp, camDir], dim=0)
-    Rh = np.concatenate([np.concatenate([R, np.zeros((3,1))], 1), np.array([[0,0,0,1]]), 0)
+    R = np.stack([camRight, camUp, camDir], axis=0)
+    Rh = np.concatenate([np.concatenate([R, np.zeros((3,1))], 1), np.array([[0,0,0,1]])], 0)
     t = np.concatenate([np.eye(3), np.transpose(np.expand_dims(-curPos, 0))], 1)
     th = np.concatenate([t, np.array([[0,0,0,1]])], 0)
     posMat = Rh.dot(th)
     cam2world = np.linalg.inv(posMat)
-    xyzw = quadXYZWFromRotMat(cam2world[:3,:3])
+    xyzw = quatXYZWFromRotMat(cam2world[:3,:3])
     return np.copy(curPos), xyzw
-
-
 

@@ -15,6 +15,8 @@ import numpy as np
 import cv2
 from sklearn.neighbors import NearestNeighbors
 import logging
+import pdb
+from sklearn.neighbors import KDTree
 
 # For simplicity, we set the global map's coordinate same as the env's coordinate.
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
@@ -38,7 +40,7 @@ class globalMap():
         self.shxy = self.gen_meshgrid(self.input_hw, self.dsample_rate) # [3, h*w/s]
 
         self.map_points = None
-        self.sampled_map_points = None
+        self.smap_points = None
     
     def scale_K(self, K, drate):
         # scale the intrinsics to meet the resized image
@@ -48,10 +50,10 @@ class globalMap():
         return scaled_K
     
     def gen_meshgrid(self, hw, rate):
-        h = hw[0] / rate
-        w = hw[1] / rate
-        xx, yy = np.meshgrid([np.range(w), np.range(h)])
-        hxy = np.concatenate([xx, yy, np.ones((h,w))])
+        h = int(hw[0] // rate)
+        w = int(hw[1] // rate)
+        xx, yy = np.meshgrid(np.arange(w), np.arange(h))
+        hxy = np.stack([xx, yy, np.ones((h,w))], -1)
         return np.transpose(np.reshape(hxy, (-1,3)))
 
     def unproject(self, rgbd, hxy, K_inv):
@@ -67,20 +69,21 @@ class globalMap():
         # Transform the camera coord points into world (env) coord.
         # points: [N, 3], pose: [4, 4] [R, T] format
         h_points = np.concatenate([points, np.ones_like(points)[:,-1:]], -1)
-        gpoints = pose.dot(np.transpose(h_points))
+        gpoints = pose.dot(np.transpose(h_points))[:3,:]
         return np.transpose(gpoints)
     
-    def remove_duplicate(self, points, sampled=False, eps=1e-3):
+    def remove_duplicate(self, points, sampled=False, eps=0.1):
         # remove the existed points in global map
         # Note: here we only use the distance threshold since we assume perfect depth and pose
         if not sampled:
             kdt = KDTree(self.map_points[:,:3], leaf_size=30, metric='euclidean')
         else:
-            kdt = KDTree(self.sampled_map_points[:,:3], leaf_size=30, metric='euclidean')
+            kdt = KDTree(self.smap_points[:,:3], leaf_size=30, metric='euclidean')
         
         dist, ind = kdt.query(points[:,:3], k=1, return_distance=True)
-        mask = (dist < eps)
-        new_points = points[mask]
+        mask = (dist < eps).squeeze(-1)
+        #pdb.set_trace()
+        new_points = points[~mask]
         return new_points
 
     def merge_local_obs(self, rgbd, cur_pose):
@@ -89,8 +92,8 @@ class globalMap():
         assert rgbd.shape[0] == self.input_hw[0]
         resized_rgbd = cv2.resize(rgbd, (self.input_hw[0] // self.dsample_rate, self.input_hw[1] // self.dsample_rate))
         
-        local_points = self.unproject(rgbd, self.K_inv)
-        slocal_points = self.unproject(resized_rgbd, self.sK_inv)
+        local_points = self.unproject(rgbd, self.hxy, self.K_inv)
+        slocal_points = self.unproject(resized_rgbd, self.shxy, self.sK_inv)
         
         lpoints_in_gcoord = self.local_to_global(local_points[:,:3], cur_pose)
         lpoints_in_gcoord = np.concatenate([lpoints_in_gcoord, local_points[:,3:]], -1)
@@ -104,7 +107,7 @@ class globalMap():
             self.map_points = np.copy(lpoints_in_gcoord)
         
         if not (self.smap_points is None):
-            snew_points = self.remove_duplicate(slpoints_in_gcoord)
+            snew_points = self.remove_duplicate(slpoints_in_gcoord, sampled=True)
             self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
             increase_ratio = snew_points.shape[0] / self.smap_points.shape[0]
         else:
@@ -118,16 +121,30 @@ class globalMap():
         assert rgbd.shape[0] == self.input_hw[0]
         resized_rgbd = cv2.resize(rgbd, (self.input_hw[0] // self.dsample_rate, self.input_hw[1] // self.dsample_rate))
         
-        slocal_points = self.unproject(resized_rgbd, self.sK_inv)
+        slocal_points = self.unproject(resized_rgbd, self.shxy, self.sK_inv)
         slpoints_in_gcoord = self.local_to_global(slocal_points[:,:3], cur_pose)
         slpoints_in_gcoord = np.concatenate([slpoints_in_gcoord, slocal_points[:,3:]], -1)
         
         if not (self.smap_points is None):
-            snew_points = self.remove_duplicate(slpoints_in_gcoord)
+            snew_points = self.remove_duplicate(slpoints_in_gcoord, sampled=True)
             self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
             increase_ratio = snew_points.shape[0] / self.smap_points.shape[0]
         else:
             self.smap_points = np.copy(slpoints_in_gcoord)
+            increase_ratio = 1.0
+        return increase_ratio
+    
+    def merge_local_pc(self, pc, pose):
+        # Merge the current observed point cloud (in global coord) to the global map
+        pc_flat = np.reshape(pc, [-1,3])
+        lpoints_in_gcoord = self.local_to_global(pc_flat, pose)
+
+        if not (self.map_points is None):
+            new_points = self.remove_duplicate(lpoints_in_gcoord)
+            self.map_points = np.concatenate([self.map_points, new_points], 0)
+            increase_ratio = new_points.shape[0] / (self.input_hw[0] * self.input_hw[1])
+        else:
+            self.map_points = np.copy(lpoints_in_gcoord)
             increase_ratio = 1.0
         return increase_ratio
         
@@ -160,12 +177,13 @@ class RoomExplorationTask(BaseTask):
             MapExploreReward(self.config),
         ]
 
-        self.random_init = False
-        self.initial_pos_all = np.array(self.config.get('initial_pos', [[0, 0, 0]]))
-        self.initial_orn_all = np.array(self.config.get('initial_orn', [[0, 0, 0]]))
-        assert len(self.initial_pos_all.shape) == 2 and self.initial_pos_all.shape[0] == self.num_robot, \
+        self.random_init = self.config.get("random_pos", False)
+        if not self.random_init:
+            self.initial_pos_all = np.array(self.config.get('initial_pos', [[0, 0, 0]]))
+            self.initial_rpy_all = np.zeros((self.num_robots, 3))
+        assert len(self.initial_pos_all.shape) == 2 and self.initial_pos_all.shape[0] == self.num_robots, \
             'initial_pos must be consistent with robot num'
-        assert len(self.initial_orn_all.shape) == 2 and self.initial_orn_all.shape[0] == self.num_robot, \
+        assert len(self.initial_rpy_all.shape) == 2 and self.initial_rpy_all.shape[0] == self.num_robots, \
             'initial_pos must be consistent with robot num'
 
         self.img_h = self.config.get('image_height', 128)
@@ -174,6 +192,8 @@ class RoomExplorationTask(BaseTask):
         fx = (self.img_w / 2.0) / np.tan(self.vfov / 360.0 * np.pi)
         K = np.array([[fx, 0.0, self.img_w / 2.0], [0.0, fx, self.img_h / 2.0], [0, 0, 1.0]])
         self.gmap = globalMap(K, (self.img_h, self.img_w), 8)
+
+        self.floor_num = 0
 
     def reset_scene(self, env):
         """
@@ -191,8 +211,8 @@ class RoomExplorationTask(BaseTask):
         :return: initial pose
         """
         _, initial_pos = env.scene.get_random_point(floor=self.floor_num)
-        initial_orn = np.array([0, 0, np.random.uniform(0, np.pi * 2)])
-        return initial_pos, initial_orn
+        initial_rpy = np.array([0, 0, np.random.uniform(0, np.pi * 2)])
+        return initial_pos, initial_rpy
 
     def reset_agent(self, env):
         """
@@ -208,21 +228,23 @@ class RoomExplorationTask(BaseTask):
             for _ in range(max_trials):
                 reset_success = np.zeros(self.num_robots, dtype=bool)
                 initial_pos = np.zeros((self.num_robots, 3))
-                initial_orn = np.zeros((self.num_robots, 3))
+                initial_rpy = np.zeros((self.num_robots, 3))
                 for robot_id in range(self.num_robots):
-                    initial_pos[robot_id], initial_orn[robot_id] = self.sample_initial_pose(env)
-                    reset_success[robot_id] = env.test_valid_position(env.robots[robot_id], initial_pos[robot_id], initial_orn[robot_id])
+                    initial_pos[robot_id], initial_rpy[robot_id] = self.sample_initial_pose(env)
+                    reset_success[robot_id] = env.test_valid_position(env.robots[robot_id], initial_pos[robot_id], initial_rpy[robot_id])
                 p.restoreState(state_id)
                 if np.all(reset_success):
                     break
             if not np.all(reset_success):
                 logging.warning("WARNING: Failed to reset robot without collision")
             for robot_id in range(self.num_robots):
-                env.land(env.robots[robot_id], initial_pos[robot_id], initial_orn[robot_id])
+                env.land(env.robots[robot_id], initial_pos[robot_id], initial_rpy[robot_id])
+                env.robots[robot_id].cur_position = initial_pos[robot_id]
             p.removeState(state_id)
         else:
             for i in range(self.num_robots):
-                env.land(env.robots[i], self.initial_pos_all[i], self.initial_orn_all[i])
+                env.land(env.robots[i], self.initial_pos_all[i], self.initial_rpy_all[i])
+                env.robots[i].cur_position = self.initial_pos_all[i]
         for reward_function in self.reward_functions:
             reward_function.reset(self, env)
 
