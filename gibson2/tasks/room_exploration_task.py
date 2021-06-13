@@ -22,7 +22,7 @@ from sklearn.neighbors import KDTree
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
 
 class globalMap():
-    def __init__(self, K, input_hw, dsample_rate=1.0):
+    def __init__(self, K, input_hw, dsample_rate=1.0, max_num=5e5):
         # K: camera intrinsics
         # init_pos: The starting position (in env coordinate) of the current scene
         # init_pose: The starting camera pose (extrinsics)
@@ -30,40 +30,15 @@ class globalMap():
         # dsample_rate: Down-sample rate to store the map (point cloud)
         self.input_hw = input_hw
         self.dsample_rate = int(dsample_rate)
-
-        self.K = np.array(K)
-        self.K_inv = np.linalg.inv(K)
-        self.hxy = self.gen_meshgrid(self.input_hw, 1.0) # [3, h*w]
-
-        self.sK = self.scale_K(self.K, self.dsample_rate)
-        self.sK_inv = np.linalg.inv(self.sK)
-        self.shxy = self.gen_meshgrid(self.input_hw, self.dsample_rate) # [3, h*w/s]
+        self.max_num = int(max_num)
 
         self.map_points = None
         self.smap_points = None
     
-    def scale_K(self, K, drate):
-        # scale the intrinsics to meet the resized image
-        scaled_K = np.copy(K)
-        scaled_K[0,:] /= drate
-        scaled_K[1,:] /= drate
-        return scaled_K
-    
-    def gen_meshgrid(self, hw, rate):
-        h = int(hw[0] // rate)
-        w = int(hw[1] // rate)
-        xx, yy = np.meshgrid(np.arange(w), np.arange(h))
-        hxy = np.stack([xx, yy, np.ones((h,w))], -1)
-        return np.transpose(np.reshape(hxy, (-1,3)))
-
-    def unproject(self, rgbd, hxy, K_inv):
-        # unproject the colored depth to 3d points, rgbd: [H, W, 4]
-        # return: colored points: [N, 6]
-        depth = rgbd[...,-1:]
-        assert (depth.shape[0]*depth.shape[1] == hxy.shape[1])
-        points = K_inv.dot(hxy) * np.reshape(depth, -1)
-        rgb = np.reshape(rgbd[...,:3], (-1,3))
-        return np.concatenate([np.transpose(points), rgb], -1)
+    def random_sample_pc(self, points, rate):
+        mask = (np.random.rand(points.shape[0]) < (1.0 / rate))
+        sampled_points = points[mask]
+        return sampled_points
     
     def local_to_global(self, points, pose):
         # Transform the camera coord points into world (env) coord.
@@ -85,54 +60,6 @@ class globalMap():
         #pdb.set_trace()
         new_points = points[~mask]
         return new_points
-
-    def merge_local_obs(self, rgbd, cur_pose):
-        # rgbd observation and agent's pose wrt global (env) coordinate.
-        # we provide both original and sampled global maps
-        assert rgbd.shape[0] == self.input_hw[0]
-        resized_rgbd = cv2.resize(rgbd, (self.input_hw[0] // self.dsample_rate, self.input_hw[1] // self.dsample_rate))
-        
-        local_points = self.unproject(rgbd, self.hxy, self.K_inv)
-        slocal_points = self.unproject(resized_rgbd, self.shxy, self.sK_inv)
-        
-        lpoints_in_gcoord = self.local_to_global(local_points[:,:3], cur_pose)
-        lpoints_in_gcoord = np.concatenate([lpoints_in_gcoord, local_points[:,3:]], -1)
-        slpoints_in_gcoord = self.local_to_global(slocal_points[:,:3], cur_pose)
-        slpoints_in_gcoord = np.concatenate([slpoints_in_gcoord, slocal_points[:,3:]], -1)
-        
-        if not (self.map_points is None):
-            new_points = self.remove_duplicate(lpoints_in_gcoord)
-            self.map_points = np.concatenate([self.map_points, new_points], 0)
-        else:
-            self.map_points = np.copy(lpoints_in_gcoord)
-        
-        if not (self.smap_points is None):
-            snew_points = self.remove_duplicate(slpoints_in_gcoord, sampled=True)
-            self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
-            increase_ratio = snew_points.shape[0] / self.smap_points.shape[0]
-        else:
-            self.smap_points = np.copy(slpoints_in_gcoord)
-            increase_ratio = 1.0
-        return increase_ratio
-    
-    def merge_sampled_local_obs(self, rgbd, cur_pose):
-        # rgbd observation and agent's pose wrt global (env) coordinate.
-        # we provide only sampled global maps using this func
-        assert rgbd.shape[0] == self.input_hw[0]
-        resized_rgbd = cv2.resize(rgbd, (self.input_hw[0] // self.dsample_rate, self.input_hw[1] // self.dsample_rate))
-        
-        slocal_points = self.unproject(resized_rgbd, self.shxy, self.sK_inv)
-        slpoints_in_gcoord = self.local_to_global(slocal_points[:,:3], cur_pose)
-        slpoints_in_gcoord = np.concatenate([slpoints_in_gcoord, slocal_points[:,3:]], -1)
-        
-        if not (self.smap_points is None):
-            snew_points = self.remove_duplicate(slpoints_in_gcoord, sampled=True)
-            self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
-            increase_ratio = snew_points.shape[0] / self.smap_points.shape[0]
-        else:
-            self.smap_points = np.copy(slpoints_in_gcoord)
-            increase_ratio = 1.0
-        return increase_ratio
     
     def merge_local_pc(self, pc, pose):
         # Merge the current observed point cloud (in global coord) to the global map
@@ -140,11 +67,16 @@ class globalMap():
         lpoints_in_gcoord = self.local_to_global(pc_flat, pose)
 
         if not (self.map_points is None):
+            # Get the newly observed points and merge into the global map (both full map and sampled map)
             new_points = self.remove_duplicate(lpoints_in_gcoord)
+            snew_points = self.random_sample_pc(new_points, self.dsample_rate)
+            
             self.map_points = np.concatenate([self.map_points, new_points], 0)
+            self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
             increase_ratio = new_points.shape[0] / (self.input_hw[0] * self.input_hw[1])
         else:
             self.map_points = np.copy(lpoints_in_gcoord)
+            self.smap_points = np.copy(self.random_sample_pc(lpoints_in_gcoord, self.dsample_rate))
             increase_ratio = 1.0
         return increase_ratio
         
@@ -157,7 +89,15 @@ class globalMap():
         else:
             gmap_in_lcoord = self.local_to_global(self.smap_points, world2cam)
         return gmap_in_lcoord
-
+    
+    def get_input_map(self):
+        N = self.smap_points.shape[0]
+        if N > self.max_num:
+            print("Map overflow!")
+            input_map = np.copy(self.smap_points[N-self.max_num:, :])
+        else:
+            input_map = np.concatenate([self.smap_points, np.tile(self.smap_points[:1,:], (self.max_num-N, 1))], 0)
+        return input_map
 
 class RoomExplorationTask(BaseTask):
     """
