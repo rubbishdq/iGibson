@@ -23,13 +23,13 @@ object_randomization_freq: null
 # robot
 robot: Quadrotor
 is_discrete: false
-velocity: 0.5
+velocity: 1
 auto_navigation: true
 
 # task
 # TODO:
 task: room_exploration
-random_pos: false
+random_pos: true
 initial_pos: [[-0.4, 0.7, 0.1]]
 
 # reward
@@ -42,8 +42,8 @@ discount_factor: 0.99
 
 # termination condition
 # TODO:
-max_step: 500
-max_collisions_allowed: 500
+max_step: 100
+max_collisions_allowed: 20
 
 # misc config
 initial_pos_z_offset: 0.1

@@ -278,7 +278,6 @@ class iGibsonEnv(BaseEnv):
         :return: observation as a dictionary
         """
         state = defaultdict(list)
-
         if 'task_obs' in self.output:
             state['task_obs'] = self.task.get_task_obs(self)
 
@@ -290,6 +289,7 @@ class iGibsonEnv(BaseEnv):
                         state[modality].append(key_obs[robot_id][modality])
             if key in ['bump']:
                 state[key] = self.sensors[key].get_obs(self)
+        # state['point'] = self.task.gmap.get_input_map()
         return state
 
     def run_simulation(self, robot_id):
@@ -354,6 +354,7 @@ class iGibsonEnv(BaseEnv):
             self.collision_links[robot_id] = collision_links
             self.collision_step[robot_id] += int(len(collision_links) > 0)
 
+        self.task.step()
         state = self.get_state()
 
         dones = []
