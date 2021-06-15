@@ -88,8 +88,11 @@ class globalMap():
         gmap_in_lcoord = self.local_to_global(map, world2cam)
         return gmap_in_lcoord
     
-    def get_input_map(self, pose):
-        # Return [max_num, 3] points
+    def get_input_map(self):
+        '''
+        Return:
+         (np.array): shape of (self.max_num, 3)
+        '''
         N = self.smap_points.shape[0]
         if N > self.max_num:
             print("Map overflow!")
@@ -98,6 +101,7 @@ class globalMap():
             input_map = np.concatenate([self.smap_points, np.tile(self.smap_points[:1,:], (self.max_num-N, 1))], 0)
         input_map = self.global_to_local(input_map, pose)
         return input_map
+
 
 class RoomExplorationTask(BaseTask):
     """
@@ -121,10 +125,10 @@ class RoomExplorationTask(BaseTask):
         if not self.random_init:
             self.initial_pos_all = np.array(self.config.get('initial_pos', [[0, 0, 0]]))
             self.initial_rpy_all = np.zeros((self.num_robots, 3))
-        assert len(self.initial_pos_all.shape) == 2 and self.initial_pos_all.shape[0] == self.num_robots, \
-            'initial_pos must be consistent with robot num'
-        assert len(self.initial_rpy_all.shape) == 2 and self.initial_rpy_all.shape[0] == self.num_robots, \
-            'initial_pos must be consistent with robot num'
+            assert len(self.initial_pos_all.shape) == 2 and self.initial_pos_all.shape[0] == self.num_robots, \
+                'initial_pos must be consistent with robot num'
+            assert len(self.initial_rpy_all.shape) == 2 and self.initial_rpy_all.shape[0] == self.num_robots, \
+                'initial_pos must be consistent with robot num'
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
@@ -140,6 +144,7 @@ class RoomExplorationTask(BaseTask):
         :param env: environment instance
         """
         env.scene.reset_scene_objects()
+        self.gmap.map_points, self.gmap.smap_points = None, None
 
     def sample_initial_pose(self, env):
         """
