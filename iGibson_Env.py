@@ -18,16 +18,6 @@ class iGibsonEnv(object):
                                     action_timestep=1.0 / 10.0,
                                     physics_timestep=1.0 / 40.0,
                                     device_idx=args.render_gpu_id)
-        ### log ###
-
-        # locobot_point_nav
-        # Dict(task_obs:Box(4,), rgb:Box(90, 160, 3), depth:Box(90, 160, 1))
-        # Box(2,)
-
-        # fetch_reaching
-        # Dict(task_obs:Box(4,), rgb:Box(128, 128, 3), depth:Box(128, 128, 1), scan:Box(220, 1))
-        # Box(10,)
-        
         self.observation_space = []
         self.share_observation_space = []
         self.action_space = []
@@ -49,13 +39,19 @@ class iGibsonEnv(object):
 
     def generate_share_obs(self, obs):
         share_obs = {}
-        for key in obs.keys():  # rgb, depth
-            # [agent, height, width, channel]
-            obs[key] = np.array(obs[key])
-            # [height, width, channel*agent]
-            share_obs[key] = np.concatenate(obs[key], axis=np.argmin(obs[key][0].shape))
-            # [agent, height, width, channel*agent]
-            share_obs[key] = np.expand_dims(share_obs[key], 0).repeat(self.num_agents, axis=0)
+        for key in obs.keys():
+            if key in ['rgb', 'depth', 'pc']:
+                # [agent, height, width, channel]
+                obs[key] = np.array(obs[key])
+                # [height, width, channel*agent]
+                share_obs[key] = np.concatenate(obs[key], axis=np.argmin(obs[key][0].shape))
+                # [agent, height, width, channel*agent]
+                share_obs[key] = np.expand_dims(share_obs[key], 0).repeat(self.num_agents, axis=0)
+            elif key == 'gmap':
+                # FIXME: how to define share obs?
+                share_obs[key] = np.array(obs[key][0])
+            else:
+                raise NotImplementedError
 
         return obs, share_obs
 

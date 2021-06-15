@@ -23,6 +23,8 @@ import time
 import logging
 from collections import defaultdict
 
+from wandb import set_trace
+
 
 class iGibsonEnv(BaseEnv):
     """
@@ -135,6 +137,14 @@ class iGibsonEnv(BaseEnv):
                 shape=(self.task.task_obs_dim,), low=-np.inf, high=-np.inf)
             share_observation_space['task_obs'] = self.build_obs_space(
                 shape=(self.task.task_obs_dim * self.num_robots,), low=-np.inf, high=-np.inf)
+
+        if 'gmap' in self.output:
+            observation_space['gmap'] = self.build_obs_space(
+                shape=(self.task.gmap.max_num, 3), low=-np.inf, high=-np.inf)
+            # FIXME: How to define global map in share observation space?
+            #   Currently, use agent[0]'s obs as share-obs
+            share_observation_space['gmap'] = self.build_obs_space(
+                shape=(self.task.gmap.max_num, 3), low=-np.inf, high=-np.inf)
 
         if 'rgb' in self.output:
             observation_space['rgb'] = self.build_obs_space(
@@ -270,7 +280,7 @@ class iGibsonEnv(BaseEnv):
         self.load_observation_space()
         self.load_miscellaneous_variables()
 
-    def get_state(self, collision_links=[]):
+    def get_state(self, need_gmap=False):
         """
         Get the current observation
 
@@ -278,8 +288,8 @@ class iGibsonEnv(BaseEnv):
         :return: observation as a dictionary
         """
         state = defaultdict(list)
-        if 'task_obs' in self.output:
-            state['task_obs'] = self.task.get_task_obs(self)
+        if need_gmap and 'gmap' in self.output:
+            state['gmap'] = self.task.get_task_obs(self)
 
         for key in self.sensors.keys():
             if key in ['vision','scan_occ']:
@@ -289,7 +299,6 @@ class iGibsonEnv(BaseEnv):
                         state[modality].append(key_obs[robot_id][modality])
             if key in ['bump']:
                 state[key] = self.sensors[key].get_obs(self)
-        # state['point'] = self.task.gmap.get_input_map()
         return state
 
     def run_simulation(self, robot_id):
@@ -354,27 +363,22 @@ class iGibsonEnv(BaseEnv):
             self.collision_links[robot_id] = collision_links
             self.collision_step[robot_id] += int(len(collision_links) > 0)
 
-        self.task.step()
-        state = self.get_state()
-
         dones = []
         rewards = []
         infos = []
+        self.task.step(self)
         for robot_id in range(self.num_robots):
             info = {}
             reward, info = self.task.get_reward(self, robot_id, self.collision_links[robot_id], actions[robot_id], info)
             done, info = self.task.get_termination(self, robot_id, self.collision_links[robot_id], actions[robot_id], info)
-            self.task.step(self)
             self.populate_info(info, robot_id)
 
             dones.append(done)
             rewards.append([reward])
             infos.append(info)
 
-        # if done and self.automatic_reset:
-        #     info['last_observation'] = state
-        #     state = self.reset()
-        # print(rewards)
+        state = self.get_state(need_gmap=True)
+
         return state, rewards, dones, infos
 
     def check_collision(self, body_id):
@@ -508,7 +512,8 @@ class iGibsonEnv(BaseEnv):
         self.task.reset_scene(self)
         self.task.reset_agent(self)
         self.simulator.sync()
-        state = self.get_state()
+        self.task.step(self)
+        state = self.get_state(need_gmap=True)
         self.reset_variables()
 
         return state

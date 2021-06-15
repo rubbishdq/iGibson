@@ -24,30 +24,30 @@ from sklearn.neighbors import KDTree
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
 
 class globalMap():
-    def __init__(self, input_hw, dsample_rate=1.0, max_num=5e5):
+    def __init__(self, input_hw, dsample_rate=1.0, max_num=10000):
         # init_pos: The starting position (in env coordinate) of the current scene
         # init_pose: The starting camera pose (extrinsics)
         # input_hw: The height and width of input rgbd image
         # dsample_rate: Down-sample rate to store the map (point cloud)
         self.input_hw = input_hw
         self.dsample_rate = int(dsample_rate)
-        self.max_num = int(max_num)
+        self.max_num = max_num
 
         self.map_points = None
         self.smap_points = None
-    
+
     def random_sample_pc(self, points, rate):
         mask = (np.random.rand(points.shape[0]) < (1.0 / rate))
         sampled_points = points[mask]
         return sampled_points
-    
+
     def local_to_global(self, points, pose):
         # Transform the camera coord points into world (env) coord.
         # points: [N, 3], pose: [4, 4] [R, T] format
         h_points = np.concatenate([points, np.ones_like(points)[:,-1:]], -1)
         gpoints = pose.dot(np.transpose(h_points))[:3,:]
         return np.transpose(gpoints)
-    
+
     def remove_duplicate(self, points, sampled=False, eps=0.1):
         # remove the existed points in global map
         # Note: here we only use the distance threshold since we assume perfect depth and pose
@@ -55,13 +55,12 @@ class globalMap():
             kdt = KDTree(self.map_points[:,:3], leaf_size=30, metric='euclidean')
         else:
             kdt = KDTree(self.smap_points[:,:3], leaf_size=30, metric='euclidean')
-        
+
         dist, ind = kdt.query(points[:,:3], k=1, return_distance=True)
         mask = (dist < eps).squeeze(-1)
-        #pdb.set_trace()
         new_points = points[~mask]
         return new_points
-    
+
     def merge_local_pc(self, pc, pose):
         # Merge the current observed point cloud (in global coord) to the global map
         pc_flat = np.reshape(pc, [-1,3])
@@ -71,7 +70,7 @@ class globalMap():
             # Get the newly observed points and merge into the global map (both full map and sampled map)
             new_points = self.remove_duplicate(lpoints_in_gcoord)
             snew_points = self.random_sample_pc(new_points, self.dsample_rate)
-            
+
             self.map_points = np.concatenate([self.map_points, new_points], 0)
             self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
             increase_ratio = new_points.shape[0] / (self.input_hw[0] * self.input_hw[1])
@@ -80,19 +79,21 @@ class globalMap():
             self.smap_points = np.copy(self.random_sample_pc(lpoints_in_gcoord, self.dsample_rate))
             increase_ratio = 1.0
         return increase_ratio
-        
+
     def global_to_local(self, map, tgt_pose):
         # return transformed global map into local frame coordinate
         # tgt_pose: target frame's camera pose (4x4 RT extrinsics matrix)
         world2cam = np.linalg.inv(tgt_pose)
         gmap_in_lcoord = self.local_to_global(map, world2cam)
         return gmap_in_lcoord
-    
-    def get_input_map(self):
-        '''
-        Return:
-         (np.array): shape of (self.max_num, 3)
-        '''
+
+    def get_input_map(self, pose):
+        """
+        Transform global map into one agent's "local" view
+
+        :param pose: agent's current pose
+        :return: input_map to PointNet for current robot, shape: [max_num, 3]
+        """
         N = self.smap_points.shape[0]
         if N > self.max_num:
             print("Map overflow!")
@@ -132,7 +133,7 @@ class RoomExplorationTask(BaseTask):
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
-        self.gmap = globalMap((self.img_h, self.img_w), 8)
+        self.gmap = globalMap((self.img_h, self.img_w), 8, self.config.get('n_max_points', 10000))
         self.increase_ratios = np.zeros(env.num_robots)
 
         self.floor_num = 0
@@ -191,15 +192,6 @@ class RoomExplorationTask(BaseTask):
         for reward_function in self.reward_functions:
             reward_function.reset(self, env)
 
-    # def get_termination(self, env, collision_links=[], action=None, info={}):
-    #     """
-    #     Aggreate termination conditions and fill info
-    #     """
-    #     done, info = super(RoomExplorationTask, self).get_termination(
-    #         env, collision_links, action, info)
-    #     # TODO: finish explore global map?
-    #     return done, info
-
     def global_to_local(self, env, pos):
         """
         Convert a 3D point in global frame to agent's local frame
@@ -210,12 +202,6 @@ class RoomExplorationTask(BaseTask):
         """
         return rotate_vector_3d(pos - env.robots[0].get_position(),
                                 *env.robots[0].get_rpy())
-
-    # def get_reward(self, env, robot_id=0, collision_links=[], action=None, info={}):
-    #     reward, info = super(RoomExplorationTask, self).get_reward(
-    #         env, robot_id, collision_links, action, info
-    #     )
-    #     return reward, info
 
     def step(self, env):
         """
@@ -230,13 +216,12 @@ class RoomExplorationTask(BaseTask):
             increase_ratio = self.gmap.merge_local_pc(pc, pose)
             self.increase_ratios[robot_id] = increase_ratio
 
-
     def get_task_obs(self, env):
         """
         Get task-specific observation, here we need to get each agent's "local" global map.
 
         :param env: environment instance
-        :return: task-specific observation
+        :return: input map to PointNet for each robot, [num_robots, max_num, 3]
         """
         task_obs = []
         for robot_id in range(env.num_robots):
@@ -245,5 +230,4 @@ class RoomExplorationTask(BaseTask):
             pose = quat_pos_to_mat(pos, quat)
             local_global_map = self.gmap.get_input_map(pose)
             task_obs.append(local_global_map)
-        return task_obs
-        
+        return np.array(task_obs)
