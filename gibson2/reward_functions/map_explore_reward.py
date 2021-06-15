@@ -19,15 +19,5 @@ class MapExploreReward(BaseRewardFunction):
         """
         TODO:
         """
-        obs = env.get_state()  # local map
-        rgb = obs['rgb'][robot_id]
-        depth = obs['depth'][robot_id]
-        pc = obs['pc'][robot_id]
-        # obs type: {'rgb': np.array, 'depth': np.array, 'pc': np.array}
-        pos = env.robots[robot_id].get_position()  # FIXME: Multi-agent support
-        quat = env.robots[robot_id].get_orientation()
-        pose = quat_pos_to_mat(pos, quat)
-        #increase_ratio = task.gmap.merge_sampled_local_obs(np.concatenate([rgb, depth], -1), pose)
-        increase_ratio = task.gmap.merge_local_pc(pc, pose)
-        reward = self.scale * increase_ratio
+        reward = self.scale * task.increase_ratios[robot_id]
         return reward

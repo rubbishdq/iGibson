@@ -354,6 +354,7 @@ class iGibsonEnv(BaseEnv):
             self.collision_links[robot_id] = collision_links
             self.collision_step[robot_id] += int(len(collision_links) > 0)
 
+        self.task.step()
         state = self.get_state()
 
         dones = []

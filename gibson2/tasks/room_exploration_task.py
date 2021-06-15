@@ -9,6 +9,8 @@ from gibson2.reward_functions.map_explore_reward import MapExploreReward
 from gibson2.reward_functions.collision_reward import CollisionReward
 
 from gibson2.utils.utils import l2_distance, rotate_vector_3d, cartesian_to_polar
+from gibson2.utils.utils import quat_pos_to_mat
+
 
 import numpy as np
 
@@ -22,8 +24,7 @@ from sklearn.neighbors import KDTree
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
 
 class globalMap():
-    def __init__(self, K, input_hw, dsample_rate=1.0, max_num=5e5):
-        # K: camera intrinsics
+    def __init__(self, input_hw, dsample_rate=1.0, max_num=5e5):
         # init_pos: The starting position (in env coordinate) of the current scene
         # init_pose: The starting camera pose (extrinsics)
         # input_hw: The height and width of input rgbd image
@@ -80,23 +81,22 @@ class globalMap():
             increase_ratio = 1.0
         return increase_ratio
         
-    def global_to_local(self, tgt_pose, sampled=True):
+    def global_to_local(self, map, tgt_pose):
         # return transformed global map into local frame coordinate
         # tgt_pose: target frame's camera pose (4x4 RT extrinsics matrix)
         world2cam = np.linalg.inv(tgt_pose)
-        if not sampled:
-            gmap_in_lcoord = self.local_to_global(self.map_points, world2cam)
-        else:
-            gmap_in_lcoord = self.local_to_global(self.smap_points, world2cam)
+        gmap_in_lcoord = self.local_to_global(map, world2cam)
         return gmap_in_lcoord
     
-    def get_input_map(self):
+    def get_input_map(self, pose):
+        # Return [max_num, 3] points
         N = self.smap_points.shape[0]
         if N > self.max_num:
             print("Map overflow!")
             input_map = np.copy(self.smap_points[N-self.max_num:, :])
         else:
             input_map = np.concatenate([self.smap_points, np.tile(self.smap_points[:1,:], (self.max_num-N, 1))], 0)
+        input_map = self.global_to_local(input_map, pose)
         return input_map
 
 class RoomExplorationTask(BaseTask):
@@ -128,10 +128,8 @@ class RoomExplorationTask(BaseTask):
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
-        self.vfov = self.config.get('vertical_fov', 90)
-        fx = (self.img_w / 2.0) / np.tan(self.vfov / 360.0 * np.pi)
-        K = np.array([[fx, 0.0, self.img_w / 2.0], [0.0, fx, self.img_h / 2.0], [0, 0, 1.0]])
-        self.gmap = globalMap(K, (self.img_h, self.img_w), 8)
+        self.gmap = globalMap((self.img_h, self.img_w), 8)
+        self.increase_ratios = np.zeros(env.num_robots)
 
         self.floor_num = 0
 
@@ -214,13 +212,33 @@ class RoomExplorationTask(BaseTask):
     #     )
     #     return reward, info
 
+    def step(self, env):
+        """
+        Use current state to merge the point cloud into global map, calculate the increase ratio.
+        """
+        obs = env.get_state()
+        for robot_id in range(env.num_robots):
+            pc = obs['pc'][robot_id]
+            pos = env.robots[robot_id].get_position()
+            quat = env.robots[robot_id].get_orientation()
+            pose = quat_pos_to_mat(pos, quat)
+            increase_ratio = self.gmap.merge_local_pc(pc, pose)
+            self.increase_ratios[robot_id] = increase_ratio
+
+
     def get_task_obs(self, env):
         """
-        Get task-specific observation, including goal position, current velocities, etc.
+        Get task-specific observation, here we need to get each agent's "local" global map.
 
         :param env: environment instance
         :return: task-specific observation
         """
-        pos = env.robot[0].get_position()  # FIXME: Multi-agent support
-        rpy = env.robots[0].get_rpy()
-        return pos, rpy
+        task_obs = []
+        for robot_id in range(env.num_robots):
+            pos = env.robots[robot_id].get_position()
+            quat = env.robots[robot_id].get_orientation()
+            pose = quat_pos_to_mat(pos, quat)
+            local_global_map = self.gmap.get_input_map(pose)
+            task_obs.append(local_global_map)
+        return task_obs
+        
