@@ -66,7 +66,7 @@ class Quadrotor(LocomotorRobot):
             lookat_dir = np.array(action)
             real_action = np.zeros(6)
             real_action[:3] = lookat_dir / np.max(np.abs(lookat_dir)) * self.velocity_coef
-            mat = lookat(cur_pos, action, [0, 0, 1])
+            mat = lookat(cur_pos, cur_pos + action, [0, 0, 1])
             tgt_xyzw = quatXYZWFromRotMat(mat[:3,:3])
             tgt_rpy = np.array(p.getEulerFromQuaternion(tgt_xyzw))
             tgt_rpy[:2] = 0
