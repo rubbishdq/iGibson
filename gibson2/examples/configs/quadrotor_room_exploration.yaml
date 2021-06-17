@@ -31,7 +31,7 @@ auto_navigation: true
 task: room_exploration
 random_pos: true
 initial_pos: [[-0.4, 0.7, 0.1]]
-n_max_points: 10000
+n_max_points: 20000
 
 # reward
 # TODO:

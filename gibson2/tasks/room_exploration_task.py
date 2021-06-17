@@ -63,7 +63,11 @@ class globalMap():
 
     def merge_local_pc(self, pc, pose):
         # Merge the current observed point cloud (in global coord) to the global map
-        pc_flat = np.reshape(pc, [-1,3])
+        # Remove the [0,0,0] points (invalid) in the point cloud
+        mask = ((pc != 0.0).sum(2) > 0)
+        pc_flat = pc[mask]
+        if len(pc_flat) == 0:
+            return 0.0
         lpoints_in_gcoord = self.local_to_global(pc_flat, pose)
 
         if not (self.map_points is None):
@@ -95,6 +99,7 @@ class globalMap():
         :return: input_map to PointNet for current robot, shape: [max_num, 3]
         """
         N = self.smap_points.shape[0]
+        print(N)
         if N > self.max_num:
             print("Map overflow!")
             input_map = np.copy(self.smap_points[N-self.max_num:, :])
@@ -133,7 +138,7 @@ class RoomExplorationTask(BaseTask):
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
-        self.gmap = globalMap((self.img_h, self.img_w), 8, self.config.get('n_max_points', 10000))
+        self.gmap = globalMap((self.img_h, self.img_w), 24, self.config.get('n_max_points', 10000))
         self.increase_ratios = np.zeros(env.num_robots)
 
         self.floor_num = 0
