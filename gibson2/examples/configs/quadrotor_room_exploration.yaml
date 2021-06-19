@@ -9,6 +9,8 @@ trav_map_resolution: 0.1
 trav_map_erosion: 3
 should_open_all_doors: true
 load_object_categories: [
+  window,
+  door,
   # bottom_cabinet,
   # bottom_cabinet_no_top,
   # top_cabinet,
@@ -31,7 +33,7 @@ auto_navigation: true
 task: room_exploration
 random_pos: true
 initial_pos: [[-0.4, 0.7, 0.1]]
-n_max_points: 20000
+n_max_points: 100000
 
 # reward
 # TODO:

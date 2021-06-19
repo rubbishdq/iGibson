@@ -5,6 +5,7 @@ import collections
 from scipy.spatial.transform import Rotation as R
 from transforms3d import quaternions
 from packaging import version
+from gibson2.utils.mesh_util import xyzw2wxyz, quat2rotmat
 
 # The function to retrieve the rotation matrix changed from as_dcm to as_matrix in version 1.4
 # We will use the version number for backcompatibility
@@ -139,6 +140,18 @@ def quat_pos_to_mat(pos, quat):
     mat = np.eye(4)
     mat[:3, :3] = quaternions.quat2mat([r_w, r_x, r_y, r_z])
     mat[:3, -1] = pos
+    # Return: roll, pitch, yaw
+    return mat
+
+# Quat(xyzw)
+def quatxyzw_pos_to_mat(pos, quat):
+    """Convert position and quaternion to transformation matrix"""
+    #print("quat", r_w, r_x, r_y, r_z)
+    r_x, r_y, r_z, r_w = quat
+    mat = np.eye(4)
+    #mat[:3, :3] = np.copy(quat2rotmat(xyzw2wxyz(quat))[:3,:3])
+    mat[:3, :3] = quaternions.quat2mat([r_w, r_x, r_y, r_z])
+    mat[:3, -1] = np.copy(pos)
     # Return: roll, pitch, yaw
     return mat
 

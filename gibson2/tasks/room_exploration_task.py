@@ -9,7 +9,8 @@ from gibson2.reward_functions.map_explore_reward import MapExploreReward
 from gibson2.reward_functions.collision_reward import CollisionReward
 
 from gibson2.utils.utils import l2_distance, rotate_vector_3d, cartesian_to_polar
-from gibson2.utils.utils import quat_pos_to_mat
+from gibson2.utils.utils import quat_pos_to_mat, quatxyzw_pos_to_mat
+from gibson2.utils.mesh_util import quat2rotmat, xyzw2wxyz, lookat
 
 
 import numpy as np
@@ -48,7 +49,7 @@ class globalMap():
         gpoints = pose.dot(np.transpose(h_points))[:3,:]
         return np.transpose(gpoints)
 
-    def remove_duplicate(self, points, sampled=False, eps=0.1):
+    def remove_duplicate(self, points, sampled=False, eps=0.000001):
         # remove the existed points in global map
         # Note: here we only use the distance threshold since we assume perfect depth and pose
         if not sampled:
@@ -66,6 +67,7 @@ class globalMap():
         # Remove the [0,0,0] points (invalid) in the point cloud
         mask = ((pc != 0.0).sum(2) > 0)
         pc_flat = pc[mask]
+        #pc_flat = np.reshape(pc, [-1,3])
         if len(pc_flat) == 0:
             return 0.0
         lpoints_in_gcoord = self.local_to_global(pc_flat, pose)
@@ -138,7 +140,7 @@ class RoomExplorationTask(BaseTask):
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
-        self.gmap = globalMap((self.img_h, self.img_w), 24, self.config.get('n_max_points', 10000))
+        self.gmap = globalMap((self.img_h, self.img_w), 16, self.config.get('n_max_points', 10000))
         self.increase_ratios = np.zeros(env.num_robots)
 
         self.floor_num = 0
@@ -215,9 +217,15 @@ class RoomExplorationTask(BaseTask):
         obs = env.get_state()
         for robot_id in range(env.num_robots):
             pc = obs['pc'][robot_id]
-            pos = env.robots[robot_id].get_position()
-            quat = env.robots[robot_id].get_orientation()
-            pose = quat_pos_to_mat(pos, quat)
+            pos = env.robots[robot_id].eyes.get_position()
+            quat = env.robots[robot_id].eyes.get_orientation()
+            mat = quat2rotmat(xyzw2wxyz(quat))[:3, :3]
+            view_direction = mat.dot(np.array([1, 0, 0]))
+            V = lookat(pos, pos + view_direction, [0, 0, 1])
+            pose = np.linalg.inv(V)
+            #pose = quatxyzw_pos_to_mat(pos, quat)
+            #pose = quat_pos_to_mat(pos, quat)
+            print("Trans pose: " , pose)
             increase_ratio = self.gmap.merge_local_pc(pc, pose)
             self.increase_ratios[robot_id] = increase_ratio
 
@@ -230,9 +238,10 @@ class RoomExplorationTask(BaseTask):
         """
         task_obs = []
         for robot_id in range(env.num_robots):
-            pos = env.robots[robot_id].get_position()
-            quat = env.robots[robot_id].get_orientation()
-            pose = quat_pos_to_mat(pos, quat)
+            pos = env.robots[robot_id].eyes.get_position()
+            quat = env.robots[robot_id].eyes.get_orientation()
+            pose = quatxyzw_pos_to_mat(pos, quat)
+            #pose = quat_pos_to_mat(pos, quat)
             local_global_map = self.gmap.get_input_map(pose)
             task_obs.append(local_global_map)
         return np.array(task_obs)
