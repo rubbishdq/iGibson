@@ -29,22 +29,21 @@ velocity: 2
 auto_navigation: true
 
 # task
-# TODO:
 task: room_exploration
 random_pos: true
 initial_pos: [[-0.4, 0.7, 0.1]]
-n_max_points: 100000
+down_sample_rate: 16
+n_max_points: 50000   # maximun points in global map
+duplicate_eps: 0.01   # duplicate threshold when merge local map into global
 
 # reward
-# TODO:
-potential_reward_weight: 1.0
-map_explore_reward_scale: 10.0
+collision_reward_weight: -1.0
+map_explore_reward_scale: 1.0
 
 # discount factor
 discount_factor: 0.99
 
 # termination condition
-# TODO:
 max_step: 100
 max_collisions_allowed: 20
 

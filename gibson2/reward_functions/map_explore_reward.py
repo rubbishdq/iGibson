@@ -20,4 +20,5 @@ class MapExploreReward(BaseRewardFunction):
         TODO:
         """
         reward = self.scale * task.increase_ratios[robot_id]
+        print(f"explore reward: {reward:.2f}")
         return reward

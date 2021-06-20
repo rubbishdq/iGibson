@@ -1,3 +1,4 @@
+import pdb
 from gibson2.robots.turtlebot_robot import Turtlebot
 from gibson2.robots.husky_robot import Husky
 from gibson2.robots.ant_robot import Ant
@@ -33,7 +34,8 @@ class BaseEnv(gym.Env):
                  action_timestep=1 / 10.0,
                  physics_timestep=1 / 240.0,
                  render_to_tensor=False,
-                 device_idx=0):
+                 device_idx=0,
+                 user_args=None):
         """
         :param config_file: config_file path
         :param scene_id: override scene_id in config file
@@ -41,8 +43,10 @@ class BaseEnv(gym.Env):
         :param action_timestep: environment executes action per action_timestep second
         :param physics_timestep: physics timestep for pybullet
         :param device_idx: device_idx: which GPU to run the simulation and rendering on
+        :param user_args: user settings for current config file
         """
-        self.config = parse_config(config_file)
+        self.user_args = user_args
+        self.config = parse_config(config_file, self.user_args)
         self.num_robots = num_robots
         if scene_id is not None:
             self.config['scene_id'] = scene_id
@@ -81,14 +85,15 @@ class BaseEnv(gym.Env):
                                    num_robots=num_robots)
         self.load()
 
-    def reload(self, config_file):
+    def reload(self, config_file, user_args=None):
         """
         Reload another config file
         Thhis allows one to change the configuration on the fly
 
         :param config_file: new config file path
         """
-        self.config = parse_config(config_file)
+        user_args = self.user_args if user_args is None else user_args
+        self.config = parse_config(config_file, user_args)
         self.simulator.reload()
         self.load()
 

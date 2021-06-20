@@ -42,6 +42,7 @@ class iGibsonEnv(BaseEnv):
         device_idx=0,
         render_to_tensor=False,
         automatic_reset=False,
+        user_args=None,
     ):
         """
         :param config_file: config_file path
@@ -52,6 +53,7 @@ class iGibsonEnv(BaseEnv):
         :param device_idx: which GPU to run the simulation and rendering on
         :param render_to_tensor: whether to render directly to pytorch tensors
         :param automatic_reset: whether to automatic reset after an episode finishes
+        :param user_args: user settings for current config file
         """
         super(iGibsonEnv, self).__init__(config_file=config_file,
                                          num_robots=num_robots,
@@ -60,7 +62,8 @@ class iGibsonEnv(BaseEnv):
                                          action_timestep=action_timestep,
                                          physics_timestep=physics_timestep,
                                          device_idx=device_idx,
-                                         render_to_tensor=render_to_tensor)
+                                         render_to_tensor=render_to_tensor,
+                                         user_args=user_args)
         
         self.automatic_reset = automatic_reset
 
@@ -378,6 +381,7 @@ class iGibsonEnv(BaseEnv):
             infos.append(info)
 
         state = self.get_state(need_gmap=True)
+        print(f"Total reward: {rewards}")
 
         return state, rewards, dones, infos
 

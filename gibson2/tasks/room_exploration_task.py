@@ -25,15 +25,16 @@ from sklearn.neighbors import KDTree
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
 
 class globalMap():
-    def __init__(self, input_hw, dsample_rate=1.0, max_num=10000):
+    def __init__(self, config):
         # init_pos: The starting position (in env coordinate) of the current scene
         # init_pose: The starting camera pose (extrinsics)
         # input_hw: The height and width of input rgbd image
         # dsample_rate: Down-sample rate to store the map (point cloud)
-        self.input_hw = input_hw
-        self.dsample_rate = int(dsample_rate)
-        self.max_num = max_num
-
+        self.input_hw = (config.get('image_height', 128), config.get('image_width', 128))
+        self.dsample_rate = int(config.get('down_sample_rate', 1))
+        self.max_num = int(config.get('n_max_points', 20000))
+        self.eps = config.get('duplicate_eps', 0.1)
+        
         self.map_points = None
         self.smap_points = None
 
@@ -49,7 +50,7 @@ class globalMap():
         gpoints = pose.dot(np.transpose(h_points))[:3,:]
         return np.transpose(gpoints)
 
-    def remove_duplicate(self, points, sampled=False, eps=0.000001):
+    def remove_duplicate(self, points, sampled=False):
         # remove the existed points in global map
         # Note: here we only use the distance threshold since we assume perfect depth and pose
         if not sampled:
@@ -58,7 +59,7 @@ class globalMap():
             kdt = KDTree(self.smap_points[:,:3], leaf_size=30, metric='euclidean')
 
         dist, ind = kdt.query(points[:,:3], k=1, return_distance=True)
-        mask = (dist < eps).squeeze(-1)
+        mask = (dist < self.eps).squeeze(-1)
         new_points = points[~mask]
         return new_points
 
@@ -140,7 +141,7 @@ class RoomExplorationTask(BaseTask):
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
-        self.gmap = globalMap((self.img_h, self.img_w), 16, self.config.get('n_max_points', 10000))
+        self.gmap = globalMap(self.config)
         self.increase_ratios = np.zeros(env.num_robots)
 
         self.floor_num = 0
@@ -225,7 +226,6 @@ class RoomExplorationTask(BaseTask):
             pose = np.linalg.inv(V)
             #pose = quatxyzw_pos_to_mat(pos, quat)
             #pose = quat_pos_to_mat(pos, quat)
-            print("Trans pose: " , pose)
             increase_ratio = self.gmap.merge_local_pc(pc, pose)
             self.increase_ratios[robot_id] = increase_ratio
 

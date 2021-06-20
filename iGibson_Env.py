@@ -10,14 +10,15 @@ class iGibsonEnv(object):
         self.num_agents = args.num_agents
         self.mode = args.mode
         self.scenario_name = args.scenario_name
-        self.config = gibson2.__path__[0] + '/examples/configs/' + str(self.scenario_name) + '.yaml'
-        self.env = inner_iGibsonEnv(config_file=self.config,
+        config_file_name = gibson2.__path__[0] + '/examples/configs/' + str(self.scenario_name) + '.yaml'
+        self.env = inner_iGibsonEnv(config_file=config_file_name,
                                     num_robots=self.num_agents,
                                     scene_id=scene_id,
                                     mode=self.mode,
                                     action_timestep=1.0 / 10.0,
                                     physics_timestep=1.0 / 40.0,
-                                    device_idx=args.render_gpu_id)
+                                    device_idx=args.render_gpu_id,
+                                    user_args=args)
         self.observation_space = []
         self.share_observation_space = []
         self.action_space = []

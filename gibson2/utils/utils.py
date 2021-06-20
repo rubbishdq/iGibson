@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 import yaml
 import collections
@@ -15,7 +16,7 @@ scipy_version = version.parse(scipy.version.version)
 # File I/O related
 
 
-def parse_config(config):
+def parse_config(config, user_args=None):
 
     """
     Parse iGibson config file / object
@@ -35,6 +36,10 @@ def parse_config(config):
             'config path {} does not exist. Please either pass in a dict or a string that represents the file path to the config yaml.'.format(config))
     with open(config, 'r') as f:
         config_data = yaml.load(f, Loader=yaml.FullLoader)
+    if isinstance(config_data, dict) and isinstance(user_args, argparse.Namespace):
+        for key in config_data.keys():
+            if key in user_args.__dict__.keys():
+                config_data[key] = getattr(user_args, key)
     return config_data
 
 # Geometry related
