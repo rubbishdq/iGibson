@@ -381,7 +381,8 @@ class iGibsonEnv(BaseEnv):
             infos.append(info)
 
         state = self.get_state(need_gmap=True)
-        print(f"Total reward: {rewards}")
+        print(f"global map points: {self.task.gmap.smap_points.shape[0]}")
+        print(f"Step:{self.current_step}, reward: {rewards}")
 
         return state, rewards, dones, infos
 

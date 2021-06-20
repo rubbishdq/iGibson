@@ -37,8 +37,8 @@ n_max_points: 50000   # maximun points in global map
 duplicate_eps: 0.01   # duplicate threshold when merge local map into global
 
 # reward
-collision_reward_weight: -1.0
-map_explore_reward_scale: 1.0
+collision_reward_weight: -0.5
+map_explore_reward_scale: 2.0
 
 # discount factor
 discount_factor: 0.99
