@@ -57,6 +57,13 @@ class iGibsonEnv(object):
                 share_obs[key] = np.concatenate(obs[key], axis=np.argmax(obs[key][0].shape))
                 # [agent, n_max_points*agents, 3]
                 share_obs[key] = np.expand_dims(share_obs[key], 0).repeat(self.num_agents, axis=0)
+            elif key == 'pos':
+                # [agent, 3]
+                obs[key] = np.array(obs[key])
+                # [agent*3]
+                share_obs[key] = np.concatenate(obs[key], axis=0)
+                # [agent, agent*3]
+                share_obs[key] = np.expand_dims(share_obs[key], 0).repeat(self.num_agents, axis=0)
             else:
                 raise NotImplementedError
 
