@@ -102,7 +102,6 @@ class globalMap():
         :return: input_map to PointNet for current robot, shape: [max_num, 3]
         """
         N = self.smap_points.shape[0]
-        print(N)
         if N > self.max_num:
             print("Map overflow!")
             input_map = np.copy(self.smap_points[N-self.max_num:, :])

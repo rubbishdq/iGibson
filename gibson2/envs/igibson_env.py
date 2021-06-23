@@ -1,3 +1,4 @@
+from os import stat
 from gibson2.utils.utils import quatToXYZW
 from gibson2.envs.env_base import BaseEnv
 from gibson2.tasks.room_rearrangement_task import RoomRearrangementTask
@@ -127,6 +128,7 @@ class iGibsonEnv(BaseEnv):
         Load observation space
         """
         self.output = self.config['output']
+        self.sensor_obs = self.config.get('sensor_obs', self.output)
         self.image_width = self.config.get('image_width', 128)
         self.image_height = self.config.get('image_height', 128)
         observation_space = OrderedDict()
@@ -140,6 +142,12 @@ class iGibsonEnv(BaseEnv):
                 shape=(self.task.task_obs_dim,), low=-np.inf, high=-np.inf)
             share_observation_space['task_obs'] = self.build_obs_space(
                 shape=(self.task.task_obs_dim * self.num_robots,), low=-np.inf, high=-np.inf)
+
+        if 'pos' in self.output:
+            observation_space['pos'] = self.build_obs_space(
+                shape=(3,), low=-np.inf, high=-np.inf)
+            share_observation_space['pos'] = self.build_obs_space(
+                shape=(3 * self.num_robots,), low=-np.inf, high=-np.inf)
 
         if 'gmap' in self.output:
             observation_space['gmap'] = self.build_obs_space(
@@ -156,6 +164,7 @@ class iGibsonEnv(BaseEnv):
             share_observation_space['rgb'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3 * self.num_robots),
                 low=0.0, high=1.0)
+        if 'rgb' in self.sensor_obs:
             vision_modalities.append('rgb')
 
         if 'depth' in self.output:
@@ -165,7 +174,9 @@ class iGibsonEnv(BaseEnv):
             share_observation_space['depth'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 1 * self.num_robots),
                 low=0.0, high=1.0)
+        if 'depth' in self.sensor_obs:
             vision_modalities.append('depth')
+
         if 'pc' in self.output:
             observation_space['pc'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3),
@@ -173,7 +184,9 @@ class iGibsonEnv(BaseEnv):
             share_observation_space['pc'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 3 * self.num_robots),
                 low=-np.inf, high=np.inf)
+        if 'pc' in self.sensor_obs:
             vision_modalities.append('pc')
+
         if 'optical_flow' in self.output:
             observation_space['optical_flow'] = self.build_obs_space(
                 shape=(self.image_height, self.image_width, 2),
@@ -283,7 +296,7 @@ class iGibsonEnv(BaseEnv):
         self.load_observation_space()
         self.load_miscellaneous_variables()
 
-    def get_state(self, need_gmap=False):
+    def get_state(self, output=False):
         """
         Get the current observation
 
@@ -291,9 +304,6 @@ class iGibsonEnv(BaseEnv):
         :return: observation as a dictionary
         """
         state = defaultdict(list)
-        if need_gmap and 'gmap' in self.output:
-            state['gmap'] = self.task.get_task_obs(self)
-
         for key in self.sensors.keys():
             if key in ['vision','scan_occ']:
                 key_obs = self.sensors[key].get_obs(self)
@@ -302,6 +312,21 @@ class iGibsonEnv(BaseEnv):
                         state[modality].append(key_obs[robot_id][modality])
             if key in ['bump']:
                 state[key] = self.sensors[key].get_obs(self)
+        if output:
+            output_state = defaultdict(list)
+            for key in self.output:
+                if key == 'gmap':
+                    output_state[key] = self.task.get_task_obs(self)
+                elif key == 'pos':
+                    all_pos = []
+                    for robot_id in range(self.num_robots):
+                        all_pos.append(self.robots[robot_id].eyes.get_position())
+                    output_state[key] = np.array(all_pos)
+                elif key in self.sensor_obs:
+                    output_state[key] = start[key]
+                else:
+                    raise NotImplementedError("Invalid output type!")
+            return output_state
         return state
 
     def run_simulation(self, robot_id):
@@ -380,8 +405,9 @@ class iGibsonEnv(BaseEnv):
             rewards.append([reward])
             infos.append(info)
 
-        state = self.get_state(need_gmap=True)
-        print(f"Total reward: {rewards}")
+        state = self.get_state(output=True)
+        print(f"global map points: {self.task.gmap.smap_points.shape[0]}")
+        print(f"Step:{self.current_step}, reward: {rewards}")
 
         return state, rewards, dones, infos
 
@@ -517,7 +543,7 @@ class iGibsonEnv(BaseEnv):
         self.task.reset_agent(self)
         self.simulator.sync()
         self.task.step(self)
-        state = self.get_state(need_gmap=True)
+        state = self.get_state(output=True)
         self.reset_variables()
 
         return state
