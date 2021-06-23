@@ -12,13 +12,8 @@ from gibson2.utils.utils import l2_distance, rotate_vector_3d, cartesian_to_pola
 from gibson2.utils.utils import quat_pos_to_mat, quatxyzw_pos_to_mat
 from gibson2.utils.mesh_util import quat2rotmat, xyzw2wxyz, lookat
 
-
 import numpy as np
-
-import cv2
-from sklearn.neighbors import NearestNeighbors
 import logging
-import pdb
 from sklearn.neighbors import KDTree
 
 # For simplicity, we set the global map's coordinate same as the env's coordinate.
@@ -34,7 +29,6 @@ class globalMap():
         self.dsample_rate = int(config.get('down_sample_rate', 1))
         self.max_num = int(config.get('n_max_points', 20000))
         self.eps = config.get('duplicate_eps', 0.1)
-        
         self.map_points = None
         self.smap_points = None
 
@@ -68,7 +62,6 @@ class globalMap():
         # Remove the [0,0,0] points (invalid) in the point cloud
         mask = ((pc != 0.0).sum(2) > 0)
         pc_flat = pc[mask]
-        #pc_flat = np.reshape(pc, [-1,3])
         if len(pc_flat) == 0:
             return 0.0
         lpoints_in_gcoord = self.local_to_global(pc_flat, pose)
@@ -130,19 +123,18 @@ class RoomExplorationTask(BaseTask):
         ]
 
         self.random_init = self.config.get("random_pos", False)
-        if not self.random_init:
-            self.initial_pos_all = np.array(self.config.get('initial_pos', [[0, 0, 0]]))
-            self.initial_rpy_all = np.zeros((self.num_robots, 3))
-            assert len(self.initial_pos_all.shape) == 2 and self.initial_pos_all.shape[0] == self.num_robots, \
-                'initial_pos must be consistent with robot num'
-            assert len(self.initial_rpy_all.shape) == 2 and self.initial_rpy_all.shape[0] == self.num_robots, \
-                'initial_pos must be consistent with robot num'
+        # used for non-random setting & failure landing
+        self.initial_pos = np.array(self.config.get('initial_pos', [[0, 0, 0]]))
+        self.initial_rpy = np.zeros((self.num_robots, 3))
+        assert len(self.initial_pos.shape) == 2 and self.initial_pos.shape[0] == self.num_robots, \
+            'initial_pos must be consistent with robot num'
+        assert len(self.initial_rpy.shape) == 2 and self.initial_rpy.shape[0] == self.num_robots, \
+            'initial_pos must be consistent with robot num'
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
         self.gmap = globalMap(self.config)
         self.increase_ratios = np.zeros(env.num_robots)
-
         self.floor_num = 0
 
     def reset_scene(self, env):
@@ -187,15 +179,17 @@ class RoomExplorationTask(BaseTask):
                 if np.all(reset_success):
                     break
             if not np.all(reset_success):
-                logging.warning("WARNING: Failed to reset robot without collision")
+                logging.warning(f"WARNING: Failed to reset robot without collision, reset to fixed point!")
+                initial_pos = self.initial_pos
+                initial_rpy = self.initial_rpy
             for robot_id in range(self.num_robots):
                 env.land(env.robots[robot_id], initial_pos[robot_id], initial_rpy[robot_id])
                 env.robots[robot_id].cur_position = initial_pos[robot_id]
             p.removeState(state_id)
         else:
-            for i in range(self.num_robots):
-                env.land(env.robots[i], self.initial_pos_all[i], self.initial_rpy_all[i])
-                env.robots[i].cur_position = self.initial_pos_all[i]
+            for robot_id in range(self.num_robots):
+                env.land(env.robots[robot_id], self.initial_pos[robot_id], self.initial_rpy[robot_id])
+                env.robots[robot_id].cur_position = self.initial_pos[robot_id]
         for reward_function in self.reward_functions:
             reward_function.reset(self, env)
 
@@ -223,10 +217,15 @@ class RoomExplorationTask(BaseTask):
             view_direction = mat.dot(np.array([1, 0, 0]))
             V = lookat(pos, pos + view_direction, [0, 0, 1])
             pose = np.linalg.inv(V)
-            #pose = quatxyzw_pos_to_mat(pos, quat)
-            #pose = quat_pos_to_mat(pos, quat)
+            # pose = quatxyzw_pos_to_mat(pos, quat)
+            # pose = quat_pos_to_mat(pos, quat)
             increase_ratio = self.gmap.merge_local_pc(pc, pose)
             self.increase_ratios[robot_id] = increase_ratio
+
+    def get_reward(self, env, robot_id, collision_links, action, info):
+        reward, info = super().get_reward(env, robot_id=robot_id, collision_links=collision_links, action=action, info=info)
+        env.episode_reward[robot_id] += reward
+        return reward, info
 
     def get_task_obs(self, env):
         """
@@ -240,7 +239,7 @@ class RoomExplorationTask(BaseTask):
             pos = env.robots[robot_id].eyes.get_position()
             quat = env.robots[robot_id].eyes.get_orientation()
             pose = quatxyzw_pos_to_mat(pos, quat)
-            #pose = quat_pos_to_mat(pos, quat)
+            # pose = quat_pos_to_mat(pos, quat)
             local_global_map = self.gmap.get_input_map(pose)
             task_obs.append(local_global_map)
         return np.array(task_obs)

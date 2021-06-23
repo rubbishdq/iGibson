@@ -1,7 +1,6 @@
 from gibson2.reward_functions.reward_function_base import BaseRewardFunction
 from gibson2.utils.utils import quat_pos_to_mat
 import numpy as np
-import pdb
 
 
 class MapExploreReward(BaseRewardFunction):
@@ -20,5 +19,5 @@ class MapExploreReward(BaseRewardFunction):
         TODO:
         """
         reward = self.scale * task.increase_ratios[robot_id]
-        print(f"explore reward: {reward:.2f}")
+        # print(f"explore reward: {reward:.2f}")
         return reward

@@ -369,6 +369,8 @@ class iGibsonEnv(BaseEnv):
         """
         info['episode_length'] = self.current_step
         info['collision_step'] = self.collision_step[robot_id]
+        info['global_map_points'] = self.task.gmap.smap_points.shape[0]
+        info['episode_reward'] = self.episode_reward[robot_id]
 
     def step(self, actions):
         """
@@ -406,9 +408,6 @@ class iGibsonEnv(BaseEnv):
             infos.append(info)
 
         state = self.get_state(output=True)
-        print(f"global map points: {self.task.gmap.smap_points.shape[0]}")
-        print(f"Step:{self.current_step}, reward: {rewards}")
-
         return state, rewards, dones, infos
 
     def check_collision(self, body_id):
@@ -516,6 +515,7 @@ class iGibsonEnv(BaseEnv):
         self.current_step = 0
         self.collision_step = np.zeros(self.num_robots)
         self.collision_links = [[]] * self.num_robots
+        self.episode_reward = np.zeros(self.num_robots)
 
     def randomize_domain(self):
         """

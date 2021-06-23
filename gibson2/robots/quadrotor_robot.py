@@ -27,6 +27,7 @@ class Quadrotor(LocomotorRobot):
                                 scale=config.get("robot_scale", 1.0),
                                 is_discrete=config.get("is_discrete", False),
                                 control="velocity")
+        self.history_positions = []
 
     def set_up_continuous_action_space(self):
         """
@@ -57,6 +58,7 @@ class Quadrotor(LocomotorRobot):
         """
         Apply policy action. Zero gravity.
         """
+        self.history_positions.append(np.array(self.get_position()))
         if not self.auto_navigation:
             real_action = self.policy_action_to_robot_action(action)
             p.setGravity(0, 0, 0)
@@ -73,9 +75,10 @@ class Quadrotor(LocomotorRobot):
             # rotate_mat = rotateMatrixFromTwoVec(cur_view_vector, tgt_view_vector)
             # cur_view_vector = quat2rotmat(xyzw2wxyz(cur_orn))[:3, :3].dot(np.array([1, 0, 0]))
             # assert np.linalg.norm(self.get_rpy()[2] - np.arctan2(cur_view_vector[0], -cur_view_vector[1])) < 0.1
+            cur_yaw = self.get_rpy()[2]
             tgt_yaw = np.arctan2(tgt_view_vector[0], -tgt_view_vector[1])
-            real_action[-1] = np.clip(tgt_yaw - self.get_rpy()[2], -self.velocity_coef, self.velocity_coef)
-            print(real_action)
+            if np.abs(tgt_yaw - cur_yaw) > 0.1 * self.velocity_coef:
+                real_action[-1] = np.sign(tgt_yaw - cur_yaw) * self.velocity_coef
             p.setGravity(0, 0, 0)
             p.resetBaseVelocity(self.robot_ids[0], real_action[:3], real_action[3:])
 
@@ -89,3 +92,7 @@ class Quadrotor(LocomotorRobot):
             (ord('x'),): 5,  # -z
             (): 6
         }
+
+    def robot_specific_reset(self):
+        self.history_positions = []
+        return super().robot_specific_reset()
