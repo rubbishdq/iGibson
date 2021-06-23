@@ -1,10 +1,12 @@
+from pdb import set_trace
+import pdb
 import gym
 import numpy as np
 import pybullet as p
 
 from gibson2.robots.robot_locomotor import LocomotorRobot
-from gibson2.utils.utils import quatXYZWFromRotMat
-from gibson2.utils.mesh_util import lookat
+from gibson2.utils.utils import quatXYZWFromRotMat, rotateMatrixFromTwoVec
+from gibson2.utils.mesh_util import quat2rotmat, xyzw2wxyz, lookat
 
 
 class Quadrotor(LocomotorRobot):
@@ -60,18 +62,20 @@ class Quadrotor(LocomotorRobot):
             p.setGravity(0, 0, 0)
             p.resetBaseVelocity(self.robot_ids[0], real_action[:3], real_action[3:])
         else:
-            # horizon_orn = self.get_orientation()  # TODO:
-            # self.set_orientation(self.previous_orn)
-            cur_pos = self.get_position()
-            lookat_dir = np.array(action)
             real_action = np.zeros(6)
-            real_action[:3] = lookat_dir / np.max(np.abs(lookat_dir)) * self.velocity_coef
-            mat = lookat(cur_pos, cur_pos + action, [0, 0, 1])
-            tgt_xyzw = quatXYZWFromRotMat(mat[:3,:3])
-            tgt_rpy = np.array(p.getEulerFromQuaternion(tgt_xyzw))
-            tgt_rpy[:2] = 0
-            real_action[3:] = np.sign(tgt_rpy - self.get_rpy())
-            real_action[3:5] *= 0.1
+            tgt_view_vector = np.array(action) / np.linalg.norm(action)
+            # x,y,z: directly velocity control to target position(cur_obs+action)
+            real_action[:3] = tgt_view_vector * self.velocity_coef
+            # roll,pitch,yaw: maintain roll=pitch=0, adjust yaw to watch target position
+            cur_pos = self.eyes.get_position()
+            cur_orn = self.eyes.get_orientation()
+            cur_rpy = self.eyes.get_rpy()
+            # rotate_mat = rotateMatrixFromTwoVec(cur_view_vector, tgt_view_vector)
+            # cur_view_vector = quat2rotmat(xyzw2wxyz(cur_orn))[:3, :3].dot(np.array([1, 0, 0]))
+            # assert np.linalg.norm(self.get_rpy()[2] - np.arctan2(cur_view_vector[0], -cur_view_vector[1])) < 0.1
+            tgt_yaw = np.arctan2(tgt_view_vector[0], -tgt_view_vector[1])
+            real_action[-1] = np.clip(tgt_yaw - self.get_rpy()[2], -self.velocity_coef, self.velocity_coef)
+            print(real_action)
             p.setGravity(0, 0, 0)
             p.resetBaseVelocity(self.robot_ids[0], real_action[:3], real_action[3:])
 

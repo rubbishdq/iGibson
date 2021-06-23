@@ -178,3 +178,26 @@ def lookAt_to_pose(curPos, tgtPos, upVec):
     xyzw = quatXYZWFromRotMat(cam2world[:3,:3])
     return np.copy(curPos), xyzw
 
+
+def rotateMatrixFromTwoVec(a, b):
+    """Get rotate matrix from two given vectors"""
+    def _normalize(vec):
+        return np.array(vec) / np.linalg.norm(vec)
+    def _skew(vec):
+        return np.array([
+            [0, -vec[2], vec[1]],
+            [vec[2], 0, -vec[0]],
+            [-vec[1], vec[0], 0],
+        ])
+    a, b = _normalize(a), _normalize(b)
+    if np.allclose(a, b):
+        return np.eye(3)
+    elif np.allclose(a, -b):
+        b[np.argmin(np.abs(b))] += 1e-5
+    v = np.cross(a, b)
+    s = np.linalg.norm(v)
+    c = np.dot(a, b)
+    skew_v = _skew(v)
+    R_mat = np.eye(3) + skew_v + skew_v.dot(skew_v) * (1 - c)/(s ** 2)
+    return R_mat
+
