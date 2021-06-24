@@ -66,19 +66,22 @@ class Quadrotor(LocomotorRobot):
         else:
             real_action = np.zeros(6)
             tgt_view_vector = np.array(action) / np.linalg.norm(action)
-            # x,y,z: directly velocity control to target position(cur_obs+action)
+            # (1) x,y,z: directly velocity control to target position(cur_obs+action)
             real_action[:3] = tgt_view_vector * self.velocity_coef
-            # roll,pitch,yaw: maintain roll=pitch=0, adjust yaw to watch target position
-            cur_pos = self.eyes.get_position()
-            cur_orn = self.eyes.get_orientation()
-            cur_rpy = self.eyes.get_rpy()
+            # (2) roll,pitch,yaw: maintain roll=pitch=0, adjust yaw to watch target position
+            # ------- eye pose
+            # cur_pos = self.eyes.get_position()
+            # cur_orn = self.eyes.get_orientation()
+            # cur_rpy = self.eyes.get_rpy()
             # rotate_mat = rotateMatrixFromTwoVec(cur_view_vector, tgt_view_vector)
             # cur_view_vector = quat2rotmat(xyzw2wxyz(cur_orn))[:3, :3].dot(np.array([1, 0, 0]))
             # assert np.linalg.norm(self.get_rpy()[2] - np.arctan2(cur_view_vector[0], -cur_view_vector[1])) < 0.1
-            cur_yaw = self.get_rpy()[2]
-            tgt_yaw = np.arctan2(tgt_view_vector[0], -tgt_view_vector[1])
-            if np.abs(tgt_yaw - cur_yaw) > 0.1 * self.velocity_coef:
-                real_action[-1] = np.sign(tgt_yaw - cur_yaw) * self.velocity_coef
+            cur_rpy = np.array(self.get_rpy())
+            tgt_rpy = np.zeros(3)
+            tgt_rpy[-1] = np.arctan2(tgt_view_vector[0], -tgt_view_vector[1])
+            for i in range(3):
+                real_action[i + 3] = np.clip(10 * (tgt_rpy[i] - cur_rpy[i]), -self.velocity_coef, self.velocity_coef)
+            real_action[3:5] *= 0.1  # smooth control for roll&pitch
             p.setGravity(0, 0, 0)
             p.resetBaseVelocity(self.robot_ids[0], real_action[:3], real_action[3:])
 

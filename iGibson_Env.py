@@ -74,5 +74,13 @@ class iGibsonEnv(object):
         obs, share_obs = self.generate_share_obs(obs)
         return obs, share_obs, rewards, dones, infos, None
 
+    def render(self, mode):
+        if mode == "rgb_array":
+            # [agent, height, width, 3], float
+            rgb_obs = np.array(self.env.get_state()['rgb'])
+            # [agent, height, width, 3], uint8
+            rgb_array = (rgb_obs * 255).astype(np.uint8)
+            return rgb_array
+
     def close(self):
         self.env.close()
