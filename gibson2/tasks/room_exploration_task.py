@@ -1,3 +1,4 @@
+import pdb
 from gibson2.tasks.task_base import BaseTask
 import pybullet as p
 from gibson2.scenes.igibson_indoor_scene import InteractiveIndoorScene
@@ -14,6 +15,7 @@ from gibson2.utils.mesh_util import quat2rotmat, xyzw2wxyz, lookat
 
 import numpy as np
 import logging
+import pdb
 from sklearn.neighbors import KDTree
 
 # For simplicity, we set the global map's coordinate same as the env's coordinate.
@@ -33,32 +35,66 @@ class globalMap():
         self.smap_points = None
 
     def random_sample_pc(self, points, rate):
+        """Down sample of new merged points in gmap.
+
+        Args:
+            points (np.arrray): new points
+            rate (int): down sample rate
+
+        Returns:
+            (np.array): sampled new points
+        """
         mask = (np.random.rand(points.shape[0]) < (1.0 / rate))
         sampled_points = points[mask]
         return sampled_points
 
     def local_to_global(self, points, pose):
-        # Transform the camera coord points into world (env) coord.
-        # points: [N, 3], pose: [4, 4] [R, T] format
+        """Transform points from camera coordinates into global coorinates.
+
+        Args:
+            local_points (np.array): (N, 3)
+            pose (np.array): camera pose ([4, 4] [R, T] format matrix)
+
+        Returns:
+            (np.array): global points (N, 3)
+        """
         h_points = np.concatenate([points, np.ones_like(points)[:,-1:]], -1)
         gpoints = pose.dot(np.transpose(h_points))[:3,:]
         return np.transpose(gpoints)
 
     def remove_duplicate(self, points, sampled=False):
-        # remove the existed points in global map
-        # Note: here we only use the distance threshold since we assume perfect depth and pose
+        """Remove the existed points in global map
+
+        Args:
+            points (np.array): local point cloud in global coord.
+            sampled (bool, optional): down sample. Defaults to False.
+
+        Returns:
+            (np.array): new points to be merged into gmap
+
+        Note:
+            Here we only use the distance threshold since we assume perfect depth and pose
+        """
         if not sampled:
             kdt = KDTree(self.map_points[:,:3], leaf_size=30, metric='euclidean')
         else:
             kdt = KDTree(self.smap_points[:,:3], leaf_size=30, metric='euclidean')
 
         dist, ind = kdt.query(points[:,:3], k=1, return_distance=True)
-        mask = (dist < self.eps).squeeze(-1)
-        new_points = points[~mask]
+        mask = (dist >= self.eps).squeeze(-1)
+        new_points = points[mask]
         return new_points
 
     def merge_local_pc(self, pc, pose):
-        # Merge the current observed point cloud (in global coord) to the global map
+        """Merge the current observed point cloud (in local coord) to the global map (in global coord)
+
+        Args:
+            local_points (np.array): (N, 3)
+            pose (np.array): camera pose ([4, 4] [R, T] format matrix)
+
+        Returns:
+            (float): increase_ratio, normalized in [0, 1]
+        """
         # Remove the [0,0,0] points (invalid) in the point cloud
         mask = ((pc != 0.0).sum(2) > 0)
         pc_flat = pc[mask]
@@ -81,18 +117,27 @@ class globalMap():
         return increase_ratio
 
     def global_to_local(self, map, tgt_pose):
-        # return transformed global map into local frame coordinate
-        # tgt_pose: target frame's camera pose (4x4 RT extrinsics matrix)
+        """Return global map transformed into local camera coordinate
+
+        Args:
+            map (np.array): gmap in global coord.
+            tgt_pose (np.array): target frame's camera pose (4x4 RT extrinsics matrix)
+
+        Returns:
+            (np.array): gmap in local coord.
+        """
         world2cam = np.linalg.inv(tgt_pose)
         gmap_in_lcoord = self.local_to_global(map, world2cam)
         return gmap_in_lcoord
 
     def get_input_map(self, pose):
-        """
-        Transform global map into one agent's "local" view
+        """Transform global map into one agent's "local" view
 
-        :param pose: agent's current pose
-        :return: input_map to PointNet for current robot, shape: [max_num, 3]
+        Args:
+            pose (np.array): agent's current pose
+
+        Return:
+            (np.array): input_map to PointNet for current robot, shape: [max_num, 3]
         """
         N = self.smap_points.shape[0]
         if N > self.max_num:
@@ -215,10 +260,7 @@ class RoomExplorationTask(BaseTask):
             quat = env.robots[robot_id].eyes.get_orientation()
             mat = quat2rotmat(xyzw2wxyz(quat))[:3, :3]
             view_direction = mat.dot(np.array([1, 0, 0]))
-            V = lookat(pos, pos + view_direction, [0, 0, 1])
-            pose = np.linalg.inv(V)
-            # pose = quatxyzw_pos_to_mat(pos, quat)
-            # pose = quat_pos_to_mat(pos, quat)
+            pose = np.linalg.inv(lookat(pos, pos + view_direction, [0, 0, 1]))
             increase_ratio = self.gmap.merge_local_pc(pc, pose)
             self.increase_ratios[robot_id] = increase_ratio
 
@@ -229,17 +271,22 @@ class RoomExplorationTask(BaseTask):
 
     def get_task_obs(self, env):
         """
-        Get task-specific observation, here we need to get each agent's "local" global map.
+        Get task-specific observation.
+        Here we use the global map in global coordinate as task
 
         :param env: environment instance
         :return: input map to PointNet for each robot, [num_robots, max_num, 3]
         """
         task_obs = []
         for robot_id in range(env.num_robots):
-            pos = env.robots[robot_id].eyes.get_position()
-            quat = env.robots[robot_id].eyes.get_orientation()
-            pose = quatxyzw_pos_to_mat(pos, quat)
+            # pos = env.robots[robot_id].eyes.get_position()
+            # quat = env.robots[robot_id].eyes.get_orientation()
+            # pose = quatxyzw_pos_to_mat(pos, quat)
+            # mat = quat2rotmat(xyzw2wxyz(quat))[:3, :3]
+            # view_direction = mat.dot(np.array([1, 0, 0]))
+            # pose_ = np.linalg.inv(lookat(pos, pos + view_direction, [0, 0, 1]))
             # pose = quat_pos_to_mat(pos, quat)
+            pose = np.eye(4)
             local_global_map = self.gmap.get_input_map(pose)
             task_obs.append(local_global_map)
         return np.array(task_obs)

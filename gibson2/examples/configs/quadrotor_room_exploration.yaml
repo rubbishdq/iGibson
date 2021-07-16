@@ -9,13 +9,28 @@ trav_map_resolution: 0.1
 trav_map_erosion: 3
 should_open_all_doors: true
 load_object_categories: [
-  window,
-  door,
-  # bottom_cabinet,
-  # bottom_cabinet_no_top,
+  # window,
+  # door,
+  # shelf,
+  # table,
+  # chair,
+  # console_table,
+  # floor_lamp,
+  # counter,
   # top_cabinet,
-  # dishwasher,
+  # bottom_cabinet_no_top,
+  ### 
+  # chest,
+  # sofa,
+  # stool,
   # fridge,
+  # microwave,
+  # dishwasher,
+  # oven,
+  # sink,
+  # carpet,
+  # picture,
+  # wall_mounted_tv,
 ]
 
 # domain randomization
@@ -27,6 +42,8 @@ robot: Quadrotor
 is_discrete: false
 velocity: 2
 auto_navigation: true
+use_custom_model: false
+action_timestep: 10
 
 # task
 task: room_exploration
@@ -45,7 +62,7 @@ discount_factor: 0.99
 
 # termination condition
 max_step: 100
-max_collisions_allowed: 20
+max_collisions_allowed: 100
 
 # misc config
 initial_pos_z_offset: 0.1
