@@ -1,6 +1,6 @@
 import pdb
-from gibson2.tasks.task_base import BaseTask
 import pybullet as p
+from gibson2.tasks.task_base import BaseTask
 from gibson2.scenes.igibson_indoor_scene import InteractiveIndoorScene
 from gibson2.scenes.gibson_indoor_scene import StaticIndoorScene
 from gibson2.termination_conditions.max_collision import MaxCollision
@@ -14,25 +14,136 @@ from gibson2.utils.utils import quat_pos_to_mat, quatxyzw_pos_to_mat
 from gibson2.utils.mesh_util import quat2rotmat, xyzw2wxyz, lookat
 
 import numpy as np
+import math
 import logging
-import pdb
+from collections import defaultdict, OrderedDict
+import matplotlib.pyplot as plt
 from sklearn.neighbors import KDTree
+from icecream import ic
+import time
 
 # For simplicity, we set the global map's coordinate same as the env's coordinate.
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
 
-class globalMap():
+class VoxelGrid():
     def __init__(self, config):
-        # init_pos: The starting position (in env coordinate) of the current scene
-        # init_pose: The starting camera pose (extrinsics)
-        # input_hw: The height and width of input rgbd image
-        # dsample_rate: Down-sample rate to store the map (point cloud)
+        self.bbox = np.array(config.get('bounding_box', [[-1,1],[-1,1],[-1,1]]))
+        self.voxel_size = np.array(config.get('voxel_size', [0.1, 0.1, 0.1]))
+        assert self.bbox.shape == (3, 2) and self.voxel_size.shape == (3,)
+        self.W = math.ceil((self.bbox[0, 1] - self.bbox[0, 0]) / self.voxel_size[0])
+        self.H = math.ceil((self.bbox[1, 1] - self.bbox[1, 0]) / self.voxel_size[1])
+        self.D = math.ceil((self.bbox[2, 1] - self.bbox[2, 0]) / self.voxel_size[2])
+        self.T = int(config.get('voxel_points', 35))
+        self._voxel_coords = []
+        self._voxel_points = OrderedDict()
+        self._voxel_features = OrderedDict()
+
+    @property
+    def voxel_coords(self):
+        """Voxel coordinates (N, 3) in voxel grid representation.
+
+        NOTE: in order of (D,H,W) 
+        """
+        return np.array(self._voxel_coords, dtype=np.int32)
+
+    @property
+    def voxel_points(self):
+        """List of all global points grouped in voxel grid."""
+        return list(self._voxel_points.values())
+
+    @property
+    def voxel_features(self):
+        """Voxel features (N, T, 3) in voxel grid representation."""
+        return np.array(list(self._voxel_features.values()), dtype=np.float32)
+
+    def update(self, new_points):
+        """Update new points in pc into voxel grid
+
+        Args:
+            new_points (np.array): (N, 3)
+        """
+        # group points and get unique voxel coords
+        new_voxel_coords = ((new_points - self.bbox[:, 0]) / self.voxel_size).astype(np.int32)
+        new_voxel_coords = new_voxel_coords[:, [2, 1, 0]] # convert to (D,H,W)
+        new_voxel_coords, inv_ind = np.unique(new_voxel_coords, axis=0, return_inverse=True)
+        # merge new points into voxel grid
+        for i, voxel_coord in enumerate(new_voxel_coords):
+            points = new_points[inv_ind == i]
+            voxel_hash = voxel_coord.tobytes()
+            if voxel_hash not in self._voxel_features:
+                self._voxel_coords.append(voxel_coord)
+                self._voxel_points[voxel_hash] = []
+                self._voxel_features[voxel_hash] = np.zeros((self.T, 6), dtype=np.float32)
+            self._voxel_points[voxel_hash] += points.tolist()
+            # random sampling if n_points > self.T
+            np.random.shuffle(self._voxel_points[voxel_hash])
+            points = np.array(self._voxel_points[voxel_hash][:self.T])
+            # augment point features
+            self._voxel_features[voxel_hash][:len(points), :] = np.concatenate(\
+                [points, points - np.mean(points, axis=0)], axis=1)
+
+    def reset(self):
+        self._voxel_coords = []
+        self._voxel_points = OrderedDict()
+        self._voxel_features = OrderedDict()
+
+
+class GlobalMap():
+    def __init__(self, config):
+        # configs
         self.input_hw = (config.get('image_height', 128), config.get('image_width', 128))
         self.dsample_rate = int(config.get('down_sample_rate', 1))
         self.max_num = int(config.get('n_max_points', 20000))
         self.eps = config.get('duplicate_eps', 0.1)
-        self.map_points = None
-        self.smap_points = None
+        self.bbox = np.array(config.get('bounding_box', [[-1,1],[-1,1],[-1,1]]))
+        self.voxel_size = np.array(config.get('voxel_size', [0.1, 0.1, 0.1]))
+        assert self.bbox.shape == (3, 2) and self.voxel_size.shape == (3,)
+        self.W = math.ceil((self.bbox[0, 1] - self.bbox[0, 0]) / self.voxel_size[0])
+        self.H = math.ceil((self.bbox[1, 1] - self.bbox[1, 0]) / self.voxel_size[1])
+        self.D = math.ceil((self.bbox[2, 1] - self.bbox[2, 0]) / self.voxel_size[2])
+        self.T = int(config.get('voxel_points', 35))
+
+        # different representation of global map
+        self.map_points = None              # Full point cloud
+        self.smap_points = None             # Down-sampled point cloud
+        self.voxel_grid = VoxelGrid(config) # Voxel grid (hash storage)
+
+    def merge_local_pc(self, pc, pose):
+        """Merge the current observed point cloud (in local coord) to the global map (in global coord)
+
+        Update voxel grid.
+
+        Args:
+            local_points (np.array): (N, 3)
+            pose (np.array): camera pose ([4, 4] [R, T] format matrix)
+
+        Returns:
+            (float): increase_ratio, normalized in [0, 1]
+        """
+        # (1) Remove the [0,0,0] points (invalid) in the point cloud
+        mask = ((pc != 0.0).sum(2) > 0)
+        pc_flat = pc[mask]
+        if len(pc_flat) == 0:
+            return 0.0
+        # (2) Convert the local points into global points [clipped in BBox]
+        lpoints_in_gcoord = self.local_to_global(pc_flat, pose)
+        lpoints_in_gcoord = np.clip(lpoints_in_gcoord, self.bbox[:, 0], self.bbox[:, 1])
+
+        # (3) Initialize for beginning
+        if self.map_points is None:
+            self.map_points = np.copy(lpoints_in_gcoord)
+            self.smap_points = np.copy(self.random_sample_pc(lpoints_in_gcoord, self.dsample_rate))
+            self.voxel_grid.update(self.map_points)
+            increase_ratio = 1.0
+        # (4) Get the newly observed points and merge into the global map
+        else:
+            new_points = self.remove_duplicate(lpoints_in_gcoord)
+            snew_points = self.random_sample_pc(new_points, self.dsample_rate)
+            self.map_points = np.concatenate([self.map_points, new_points], 0)
+            self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
+            self.voxel_grid.update(new_points)
+            increase_ratio = new_points.shape[0] / (self.input_hw[0] * self.input_hw[1])
+        return increase_ratio
 
     def random_sample_pc(self, points, rate):
         """Down sample of new merged points in gmap.
@@ -47,20 +158,6 @@ class globalMap():
         mask = (np.random.rand(points.shape[0]) < (1.0 / rate))
         sampled_points = points[mask]
         return sampled_points
-
-    def local_to_global(self, points, pose):
-        """Transform points from camera coordinates into global coorinates.
-
-        Args:
-            local_points (np.array): (N, 3)
-            pose (np.array): camera pose ([4, 4] [R, T] format matrix)
-
-        Returns:
-            (np.array): global points (N, 3)
-        """
-        h_points = np.concatenate([points, np.ones_like(points)[:,-1:]], -1)
-        gpoints = pose.dot(np.transpose(h_points))[:3,:]
-        return np.transpose(gpoints)
 
     def remove_duplicate(self, points, sampled=False):
         """Remove the existed points in global map
@@ -85,36 +182,19 @@ class globalMap():
         new_points = points[mask]
         return new_points
 
-    def merge_local_pc(self, pc, pose):
-        """Merge the current observed point cloud (in local coord) to the global map (in global coord)
+    def local_to_global(self, points, pose):
+        """Transform points from camera coordinates into global coorinates.
 
         Args:
             local_points (np.array): (N, 3)
             pose (np.array): camera pose ([4, 4] [R, T] format matrix)
 
         Returns:
-            (float): increase_ratio, normalized in [0, 1]
+            (np.array): global points (N, 3)
         """
-        # Remove the [0,0,0] points (invalid) in the point cloud
-        mask = ((pc != 0.0).sum(2) > 0)
-        pc_flat = pc[mask]
-        if len(pc_flat) == 0:
-            return 0.0
-        lpoints_in_gcoord = self.local_to_global(pc_flat, pose)
-
-        if not (self.map_points is None):
-            # Get the newly observed points and merge into the global map (both full map and sampled map)
-            new_points = self.remove_duplicate(lpoints_in_gcoord)
-            snew_points = self.random_sample_pc(new_points, self.dsample_rate)
-
-            self.map_points = np.concatenate([self.map_points, new_points], 0)
-            self.smap_points = np.concatenate([self.smap_points, snew_points], 0)
-            increase_ratio = new_points.shape[0] / (self.input_hw[0] * self.input_hw[1])
-        else:
-            self.map_points = np.copy(lpoints_in_gcoord)
-            self.smap_points = np.copy(self.random_sample_pc(lpoints_in_gcoord, self.dsample_rate))
-            increase_ratio = 1.0
-        return increase_ratio
+        h_points = np.concatenate([points, np.ones_like(points)[:,-1:]], -1)
+        gpoints = pose.dot(np.transpose(h_points))[:3,:]
+        return np.transpose(gpoints)
 
     def global_to_local(self, map, tgt_pose):
         """Return global map transformed into local camera coordinate
@@ -148,6 +228,11 @@ class globalMap():
         input_map = self.global_to_local(input_map, pose)
         return input_map
 
+    def reset(self):
+        self.map_points = None
+        self.smap_points = None
+        self.voxel_grid.reset()
+
 
 class RoomExplorationTask(BaseTask):
     """
@@ -178,7 +263,7 @@ class RoomExplorationTask(BaseTask):
 
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
-        self.gmap = globalMap(self.config)
+        self.gmap = GlobalMap(self.config)
         self.increase_ratios = np.zeros(env.num_robots)
         self.floor_num = 0
 
@@ -189,7 +274,7 @@ class RoomExplorationTask(BaseTask):
         :param env: environment instance
         """
         env.scene.reset_scene_objects()
-        self.gmap.map_points, self.gmap.smap_points = None, None
+        self.gmap.reset()
 
     def sample_initial_pose(self, env):
         """
@@ -263,6 +348,8 @@ class RoomExplorationTask(BaseTask):
             pose = np.linalg.inv(lookat(pos, pos + view_direction, [0, 0, 1]))
             increase_ratio = self.gmap.merge_local_pc(pc, pose)
             self.increase_ratios[robot_id] = increase_ratio
+        # voxel_density = np.array([len(vp) for vp in self.gmap.voxel_grid.voxel_points])
+        # ic(voxel_density.argsort()[::-1][0:5])
 
     def get_reward(self, env, robot_id, collision_links, action, info):
         reward, info = super().get_reward(env, robot_id=robot_id, collision_links=collision_links, action=action, info=info)
