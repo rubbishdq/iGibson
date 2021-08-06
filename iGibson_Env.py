@@ -49,13 +49,12 @@ class iGibsonEnv(object):
                 share_obs[key] = np.concatenate(obs[key], axis=np.argmin(obs[key][0].shape))
                 # [agent, height, width, channel*agent]
                 share_obs[key] = np.expand_dims(share_obs[key], 0).repeat(self.num_agents, axis=0)
-            elif key == 'gmap':
-                # FIXME: how to define share obs?
-                # [agent, n_max_points, 3]
+            elif 'gmap' in key:
+                # [agent, N, feat_dim, ...]
                 obs[key] = np.array(obs[key])
-                # [n_max_points*agents, 3]
+                # [agent*N, feat_dim, ...]
                 share_obs[key] = np.concatenate(obs[key], axis=np.argmax(obs[key][0].shape))
-                # [agent, n_max_points*agents, 3]
+                # [agent, agent*N, feat_dim, ...]
                 share_obs[key] = np.expand_dims(share_obs[key], 0).repeat(self.num_agents, axis=0)
             elif key == 'pos':
                 # [agent, 3]

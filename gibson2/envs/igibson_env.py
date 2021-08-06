@@ -149,13 +149,23 @@ class iGibsonEnv(BaseEnv):
             share_observation_space['pos'] = self.build_obs_space(
                 shape=(3 * self.num_robots,), low=-np.inf, high=-np.inf)
 
-        if 'gmap' in self.output:
-            observation_space['gmap'] = self.build_obs_space(
+        if 'gmap_pc' in self.output:
+            observation_space['gmap_pc'] = self.build_obs_space(
                 shape=(self.task.gmap.max_num, 3), low=-np.inf, high=-np.inf)
-            # FIXME: How to define global map in share observation space?
+            # FIXME: How to define global map point cloud in share observation space?
             #   Currently, use agent[0]'s obs as share-obs
-            share_observation_space['gmap'] = self.build_obs_space(
-                shape=(self.task.gmap.max_num, 3), low=-np.inf, high=-np.inf)
+            share_observation_space['gmap_pc'] = self.build_obs_space(
+                shape=(self.num_robots * self.task.gmap.max_num, 3), low=-np.inf, high=-np.inf)
+
+        if 'gmap_voxel' in self.output:
+            observation_space['gmap_voxel_features'] = self.build_obs_space(
+                shape=(self.task.gmap.voxel_grid.N, self.task.gmap.voxel_grid.T, 6), low=-np.inf, high=-np.inf)
+            share_observation_space['gmap_voxel_features'] = self.build_obs_space(
+                shape=(self.num_robots * self.task.gmap.voxel_grid.N, self.task.gmap.voxel_grid.T, 6), low=-np.inf, high=-np.inf)
+            observation_space['gmap_voxel_coords'] = self.build_obs_space(
+                shape=(self.task.gmap.voxel_grid.N, 3), low=-np.inf, high=-np.inf)
+            share_observation_space['gmap_voxel_coords'] = self.build_obs_space(
+                shape=(self.num_robots * self.task.gmap.voxel_grid.N, 3), low=-np.inf, high=-np.inf)
 
         if 'rgb' in self.output:
             observation_space['rgb'] = self.build_obs_space(
@@ -315,8 +325,13 @@ class iGibsonEnv(BaseEnv):
         if output:
             output_state = defaultdict(list)
             for key in self.output:
-                if key == 'gmap':
+                if 'gmap_pc' in key:
                     output_state[key] = self.task.get_task_obs(self)
+                elif 'gmap_voxel' in key:
+                    output_state['gmap_voxel_features'] = \
+                        np.expand_dims(self.task.gmap.voxel_grid.voxel_features, 0).repeat(self.num_robots, axis=0)
+                    output_state['gmap_voxel_coords'] = \
+                        np.expand_dims(self.task.gmap.voxel_grid.voxel_coords, 0).repeat(self.num_robots, axis=0)
                 elif key == 'pos':
                     all_pos = []
                     for robot_id in range(self.num_robots):
@@ -369,7 +384,7 @@ class iGibsonEnv(BaseEnv):
         """
         info['episode_length'] = self.current_step
         info['collision_step'] = self.collision_step[robot_id]
-        info['voxel_grid_nonempty_num'] = self.task.gmap.voxel_grid.voxel_features.shape[0]
+        info['voxel_occupancy_num'] = self.task.gmap.voxel_grid.voxel_occupancy_num
         info['episode_reward'] = self.episode_reward[robot_id]
 
     def step(self, actions):

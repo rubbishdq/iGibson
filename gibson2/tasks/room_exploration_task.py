@@ -14,13 +14,11 @@ from gibson2.utils.utils import quat_pos_to_mat, quatxyzw_pos_to_mat
 from gibson2.utils.mesh_util import quat2rotmat, xyzw2wxyz, lookat
 
 import numpy as np
-import math
 import logging
 from collections import defaultdict, OrderedDict
-import matplotlib.pyplot as plt
 from sklearn.neighbors import KDTree
 from icecream import ic
-import time
+
 
 # For simplicity, we set the global map's coordinate same as the env's coordinate.
 # i.e. using env.robots[0].get_position() would give you the position in global map coord.
@@ -28,33 +26,52 @@ import time
 class VoxelGrid():
     def __init__(self, config):
         self.bbox = np.array(config.get('bounding_box', [[-1,1],[-1,1],[-1,1]]))
-        self.voxel_size = np.array(config.get('voxel_size', [0.1, 0.1, 0.1]))
-        assert self.bbox.shape == (3, 2) and self.voxel_size.shape == (3,)
-        self.W = math.ceil((self.bbox[0, 1] - self.bbox[0, 0]) / self.voxel_size[0])
-        self.H = math.ceil((self.bbox[1, 1] - self.bbox[1, 0]) / self.voxel_size[1])
-        self.D = math.ceil((self.bbox[2, 1] - self.bbox[2, 0]) / self.voxel_size[2])
-        self.T = int(config.get('voxel_points', 35))
+        self.voxel_grid_size = np.array(config.get('voxel_grid_size', [20, 20, 20]))
+        self.N = int(config.get('n_max_voxels', 5000))
+        self.T = int(config.get('voxel_inside_points', 35))
+        assert self.bbox.shape == (3, 2) and self.voxel_grid_size.shape == (3,)
+        self.W, self.H, self.D = self.voxel_grid_size
+        self.voxel_size = (self.bbox[:, 1] - self.bbox[:, 0]) / self.voxel_grid_size
         self._voxel_coords = []
         self._voxel_points = OrderedDict()
         self._voxel_features = OrderedDict()
+        self._sorted_voxel_idx = []
 
     @property
     def voxel_coords(self):
         """Voxel coordinates (N, 3) in voxel grid representation.
 
-        NOTE: in order of (D,H,W) 
+        NOTE: in order of (D, H, W) 
         """
-        return np.array(self._voxel_coords, dtype=np.int32)
+        self.n_voxels = len(self._voxel_coords)
+        if self.n_voxels > self.N:
+            return np.array(self._voxel_coords)[self._sorted_voxel_idx][:self.N]
+        else:
+            empty_cells = np.zeros((self.N - self.n_voxels, 3))
+            return np.concatenate([self._voxel_coords, empty_cells], axis=0)
+
+    @property
+    def voxel_features(self):
+        """Voxel features (N, T, 6) in voxel grid representation."""
+        self.n_voxels = len(self._voxel_coords)
+        if self.n_voxels > self.N:
+            return np.array(list(self._voxel_features.values()))[self._sorted_voxel_idx][:self.N]
+        else:
+            empty_cells = np.zeros((self.N - len(self._voxel_coords), self.T, 6))
+            return np.concatenate([list(self._voxel_features.values()), empty_cells], axis=0)
+
+    @property
+    def voxel_occupancy_num(self):
+        return len(self._voxel_coords)
+
+    @property
+    def voxel_empty_num(self):
+        return self.W * self.H * self.D - len(self._voxel_coords)
 
     @property
     def voxel_points(self):
         """List of all global points grouped in voxel grid."""
         return list(self._voxel_points.values())
-
-    @property
-    def voxel_features(self):
-        """Voxel features (N, T, 3) in voxel grid representation."""
-        return np.array(list(self._voxel_features.values()), dtype=np.float32)
 
     def update(self, new_points):
         """Update new points in pc into voxel grid
@@ -64,7 +81,7 @@ class VoxelGrid():
         """
         # group points and get unique voxel coords
         new_voxel_coords = ((new_points - self.bbox[:, 0]) / self.voxel_size).astype(np.int32)
-        new_voxel_coords = new_voxel_coords[:, [2, 1, 0]] # convert to (D,H,W)
+        new_voxel_coords = new_voxel_coords[:, [2, 1, 0]] # convert to (D, H, W)
         new_voxel_coords, inv_ind = np.unique(new_voxel_coords, axis=0, return_inverse=True)
         # merge new points into voxel grid
         for i, voxel_coord in enumerate(new_voxel_coords):
@@ -81,6 +98,11 @@ class VoxelGrid():
             # augment point features
             self._voxel_features[voxel_hash][:len(points), :] = np.concatenate(\
                 [points, points - np.mean(points, axis=0)], axis=1)
+        # sort voxel based on inside points
+        self._sorted_voxel_idx = sorted(range(len(self._voxel_coords)), \
+            key=lambda k: len(self._voxel_points[self._voxel_coords[k].tobytes()]), reverse=True)
+        if len(self._voxel_coords) > self.N:
+            print("INFO: Map overflow!")
 
     def reset(self):
         self._voxel_coords = []
@@ -96,12 +118,6 @@ class GlobalMap():
         self.max_num = int(config.get('n_max_points', 20000))
         self.eps = config.get('duplicate_eps', 0.1)
         self.bbox = np.array(config.get('bounding_box', [[-1,1],[-1,1],[-1,1]]))
-        self.voxel_size = np.array(config.get('voxel_size', [0.1, 0.1, 0.1]))
-        assert self.bbox.shape == (3, 2) and self.voxel_size.shape == (3,)
-        self.W = math.ceil((self.bbox[0, 1] - self.bbox[0, 0]) / self.voxel_size[0])
-        self.H = math.ceil((self.bbox[1, 1] - self.bbox[1, 0]) / self.voxel_size[1])
-        self.D = math.ceil((self.bbox[2, 1] - self.bbox[2, 0]) / self.voxel_size[2])
-        self.T = int(config.get('voxel_points', 35))
 
         # different representation of global map
         self.map_points = None              # Full point cloud
@@ -210,22 +226,23 @@ class GlobalMap():
         gmap_in_lcoord = self.local_to_global(map, world2cam)
         return gmap_in_lcoord
 
-    def get_input_map(self, pose):
-        """Transform global map into one agent's "local" view
+    def get_global_map_pc(self, pose=None):
+        """Get global map in representation of point-cloud.
 
         Args:
-            pose (np.array): agent's current pose
+            pose (np.array, optional): agent's current pose, if not setting, use `np.eye(4)`. Default is `None`.
 
         Return:
             (np.array): input_map to PointNet for current robot, shape: [max_num, 3]
         """
         N = self.smap_points.shape[0]
         if N > self.max_num:
-            print("Map overflow!")
+            print("INFO: Map overflow!")
             input_map = np.copy(self.smap_points[N-self.max_num:, :])
         else:
             input_map = np.concatenate([self.smap_points, np.tile(self.smap_points[:1,:], (self.max_num-N, 1))], 0)
-        input_map = self.global_to_local(input_map, pose)
+        ego_pose = np.eye(4) if pose is None else pose
+        input_map = self.global_to_local(input_map, ego_pose)
         return input_map
 
     def reset(self):
@@ -264,6 +281,7 @@ class RoomExplorationTask(BaseTask):
         self.img_h = self.config.get('image_height', 128)
         self.img_w = self.config.get('image_width', 128)
         self.gmap = GlobalMap(self.config)
+        self.gmap_format = self.config.get('gmap_format', 'voxel')
         self.increase_ratios = np.zeros(env.num_robots)
         self.floor_num = 0
 
@@ -366,14 +384,9 @@ class RoomExplorationTask(BaseTask):
         """
         task_obs = []
         for robot_id in range(env.num_robots):
-            # pos = env.robots[robot_id].eyes.get_position()
-            # quat = env.robots[robot_id].eyes.get_orientation()
-            # pose = quatxyzw_pos_to_mat(pos, quat)
-            # mat = quat2rotmat(xyzw2wxyz(quat))[:3, :3]
-            # view_direction = mat.dot(np.array([1, 0, 0]))
-            # pose_ = np.linalg.inv(lookat(pos, pos + view_direction, [0, 0, 1]))
-            # pose = quat_pos_to_mat(pos, quat)
-            pose = np.eye(4)
-            local_global_map = self.gmap.get_input_map(pose)
+            pos = env.robots[robot_id].eyes.get_position()
+            quat = env.robots[robot_id].eyes.get_orientation()
+            pose = quatxyzw_pos_to_mat(pos, quat)
+            local_global_map = self.gmap.get_global_map_pc(pose)
             task_obs.append(local_global_map)
         return np.array(task_obs)
