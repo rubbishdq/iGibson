@@ -16,6 +16,7 @@ from gibson2.sensors.bump_sensor import BumpSensor
 
 from transforms3d.euler import euler2quat
 from collections import OrderedDict
+import pdb
 import argparse
 import gym
 import numpy as np
@@ -313,17 +314,8 @@ class iGibsonEnv(BaseEnv):
         :param collision_links: collisions from last physics timestep
         :return: observation as a dictionary
         """
-        state = defaultdict(list)
-        for key in self.sensors.keys():
-            if key in ['vision','scan_occ']:
-                key_obs = self.sensors[key].get_obs(self)
-                for modality in key_obs[0]:
-                    for robot_id in range(self.num_robots):
-                        state[modality].append(key_obs[robot_id][modality])
-            if key in ['bump']:
-                state[key] = self.sensors[key].get_obs(self)
+        output_state = defaultdict(list)
         if output:
-            output_state = defaultdict(list)
             for key in self.output:
                 if 'gmap_pc' in key:
                     output_state[key] = self.task.get_task_obs(self)
@@ -342,7 +334,23 @@ class iGibsonEnv(BaseEnv):
                 else:
                     raise NotImplementedError("Invalid output type!")
             return output_state
-        return state
+        else:
+            output_state = defaultdict(list)
+            for key in self.sensors.keys():
+                if key in ['vision','scan_occ']:
+                    key_obs = self.sensors[key].get_obs(self)
+                    for modality in key_obs[0]:
+                        for robot_id in range(self.num_robots):
+                            output_state[modality].append(key_obs[robot_id][modality])
+                if key in ['bump']:
+                    output_state[key] = self.sensors[key].get_obs(self)
+            return output_state
+
+    def get_pose(self):
+        all_pose = []
+        for robot_id in range(self.num_robots):
+            all_pose.append(self.robots[robot_id].eyes.get_pose())
+        return all_pose
 
     def run_simulation(self, robot_id):
         """

@@ -80,6 +80,15 @@ class iGibsonEnv(object):
             # [agent, height, width, 3], uint8
             rgb_array = (rgb_obs * 255).astype(np.uint8)
             return rgb_array
+        elif mode == "depth_array":
+            # [agent, height, width, 1], float
+            depth_obs = np.array(self.env.get_state()['depth'])
+            # [agent, height, width, 1], float32
+            depth_array = depth_obs.astype(np.float32)
+            return depth_array
+
+    def pose(self):
+        pass
 
     def close(self):
         self.env.close()
