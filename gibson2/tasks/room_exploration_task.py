@@ -15,9 +15,127 @@ from gibson2.utils.mesh_util import quat2rotmat, xyzw2wxyz, lookat
 
 import numpy as np
 import logging
+import threading
 from collections import defaultdict, OrderedDict
 from sklearn.neighbors import KDTree
 from icecream import ic
+
+def intersect_part(seg1, seg2):
+    """Get intersect part of two 1-d line segments. Returning two values.
+
+    If doesn't intersect, the first return value will be false. Otherwise it will be true, and the second return value will be the intersect part.
+    """
+    if seg1[0] < seg2[0]:
+        if seg1[1] < seg2[0]:
+            return False, None
+        else:
+            seg_inter = [seg2[0], min(seg1[1], seg2[1])]
+            return True, seg_inter
+    else:
+        if seg2[1] < seg1[0]:
+            return False, None
+        else:
+            seg_inter = [seg1[0], min(seg2[1], seg1[1])]
+            return True, seg_inter
+
+class LocalGrid:
+    def __init__(self):
+        self.grid_array = np.array([[[]]], dtype=np.uint8) # 0(00) for unknown, 2(10) for occupied, 3(11) for free
+        self.lower_lefts = np.array([], dtype=np.int32)
+        self.grid_size = np.array([], dtype=np.int32)
+        self.lock = threading.Lock()
+
+    def read_data(self):
+        self.lock.acquire()
+        grid_array = self.grid_array.copy()
+        lower_lefts = self.lower_lefts.copy()
+        grid_size = self.grid_size.copy()
+        self.lock.release()
+        return grid_array, lower_lefts, grid_size
+    
+    def write_data(self, grid_array, lower_lefts, grid_size, copy=False):
+        self.lock.acquire()
+        if copy:
+            self.grid_array = grid_array.copy()
+            self.lower_lefts = lower_lefts.copy()
+            self.grid_size = grid_size.copy()
+        else:
+            self.grid_array = grid_array
+            self.lower_lefts = lower_lefts
+            self.grid_size = grid_size
+        self.lock.release()
+    
+
+class GlobalGrid:
+    def __init__(self, config):
+        self.resolution = config['global_grid']['grid_resolution']
+        self.grid_size = np.array(config['global_grid']['grid_size'], dtype=np.int32)
+        for s in self.grid_size:
+            if s%2 == 1:
+                print('Error: at least one element of grid_size in global_grid is not even')
+                exit()
+        self.grid_array = np.zeros(shape=self.grid_size, dtype=np.uint8)
+        pass
+
+    def merge_local_grid(self, local_grid):
+        """Merge local voxel grid data into global voxel grid
+        
+        Data in local_grid may be 0, 2 or 3, representing unknown, occupied or free voxels. 
+
+        Args:
+            local_grid (LocalGrid)
+        
+        merging process:
+
+            old     00      10      11
+        new
+        00          00      10      11
+        10          10      10      10
+        11          11      11      11
+        
+        Use bitwise computation to accelerate merging process.
+
+        R2 = N2 | O2
+        R1 = N1 | ((!N2) & O1)
+        """
+        local_grid_array, local_lower_lefts, local_grid_size = local_grid.read_data()
+        if len(local_lower_lefts) != 3 or len(local_grid_size) != 3:
+            return
+        local_upper_rights = local_lower_lefts + local_grid_size - 1
+        global_lower_lefts = -self.grid_size // 2
+        global_upper_rights = self.grid_size // 2 - 1
+
+        inter_lower_lefts = np.zeros(3, dtype=np.int32)
+        inter_upper_rights = np.zeros(3, dtype=np.int32)
+        for i in range(3):
+            inter, inter_part = intersect_part([local_lower_lefts[i], local_upper_rights[i]], \
+                                                [global_lower_lefts[i], global_upper_rights[i]])
+            if not inter:  # no need to merge, local grid out of range
+                return
+            inter_lower_lefts[i] = inter_part[0]
+            inter_upper_rights[i] = inter_part[1]
+        # N
+        local_part = local_grid_array[inter_lower_lefts[0]-local_lower_lefts[0]:inter_upper_rights[0]-local_lower_lefts[0]+1, \
+                                    inter_lower_lefts[1]-local_lower_lefts[1]:inter_upper_rights[1]-local_lower_lefts[1]+1, \
+                                    inter_lower_lefts[2]-local_lower_lefts[2]:inter_upper_rights[2]-local_lower_lefts[2]+1]
+        # O
+        global_part = self.grid_array[inter_lower_lefts[0]-global_lower_lefts[0]:inter_upper_rights[0]-global_lower_lefts[0]+1, \
+                                    inter_lower_lefts[1]-global_lower_lefts[1]:inter_upper_rights[1]-global_lower_lefts[1]+1, \
+                                    inter_lower_lefts[2]-global_lower_lefts[2]:inter_upper_rights[2]-global_lower_lefts[2]+1]
+        
+        # bitwise computation
+        N2 = local_part & 0x02
+        N1 = local_part & 0x01
+        O2 = global_part & 0x02
+        O1 = global_part & 0x01
+        N2_not_lower = (np.invert(N2) & 0x02) >> 1
+        R2 = N2 | O2
+        R1 = N1 | (N2_not_lower & O1)
+        updated_part = R2 | R1
+
+        self.grid_array[inter_lower_lefts[0]-global_lower_lefts[0]:inter_upper_rights[0]-global_lower_lefts[0]+1, \
+                        inter_lower_lefts[1]-global_lower_lefts[1]:inter_upper_rights[1]-global_lower_lefts[1]+1, \
+                        inter_lower_lefts[2]-global_lower_lefts[2]:inter_upper_rights[2]-global_lower_lefts[2]+1] = updated_part
 
 
 # For simplicity, we set the global map's coordinate same as the env's coordinate.
@@ -123,6 +241,7 @@ class GlobalMap():
         self.map_points = None              # Full point cloud
         self.smap_points = None             # Down-sampled point cloud
         self.voxel_grid = VoxelGrid(config) # Voxel grid (hash storage)
+        self.global_grid = GlobalGrid(config) # Voxel grid (hash storage)
 
     def merge_local_pc(self, pc, pose):
         """Merge the current observed point cloud (in local coord) to the global map (in global coord)
@@ -285,6 +404,8 @@ class RoomExplorationTask(BaseTask):
         self.increase_ratios = np.zeros(env.num_robots)
         self.floor_num = 0
 
+        self.local_grid = LocalGrid()
+
     def reset_scene(self, env):
         """
         Reset all scene objects.
@@ -368,6 +489,10 @@ class RoomExplorationTask(BaseTask):
             self.increase_ratios[robot_id] = increase_ratio
         # voxel_density = np.array([len(vp) for vp in self.gmap.voxel_grid.voxel_points])
         # ic(voxel_density.argsort()[::-1][0:5])
+
+        # local grid message from ROS is merged here
+        # TODO: add support to multi-agent scenarios
+        self.gmap.global_grid.merge_local_grid(self.local_grid)
 
     def get_reward(self, env, robot_id, collision_links, action, info):
         reward, info = super().get_reward(env, robot_id=robot_id, collision_links=collision_links, action=action, info=info)

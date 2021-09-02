@@ -55,10 +55,15 @@ gmap_format: voxel      # global map format: voxel / pc
 down_sample_rate: 16    # down-sample rate to store the map
 n_max_points: 50000     # maximum points in global map point cloud
 duplicate_eps: 0.01     # duplicate threshold when merge local map into global
-bounding_box: [[-5, 5], [-5, 5], [0, 3]]  # range of x,y,z [10x10x3 BBox]
+bounding_box: [[-5, 5], [-5, 5], [0, 3]]  # range of x,y,z
 voxel_grid_size: [50, 50, 15]             # size of the global voxel grid
 voxel_inside_points: 35                   # maximum points in a single voxel
 n_max_voxels: 5000      # maximum occupied voxels in global voxel grid
+
+# global grid & local grid
+global_grid:
+  grid_resolution: 0.2  # must be equal to resolution of global mapper
+  grid_size: [80, 80, 20]  # centered at origin, elements must be even
 
 # reward
 collision_reward_weight: -0.5
